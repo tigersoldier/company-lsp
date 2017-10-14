@@ -27,6 +27,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'company)
 (require 'lsp-mode)
 
@@ -36,22 +37,32 @@
   :group 'tools)
 
 (defcustom company-lsp-cache-candidates t
-  "When set to non-nil, company caches the completion candidates
-so company filters the candidates as completion progresses. If
-set to `nil', each incremental completion triggers a completion
-request to the language server."
+  "Whether or not to cache completion candidates.
+
+When set to non-nil, company caches the completion candidates so
+company filters the candidates as completion progresses. If set
+to nil, each incremental completion triggers a completion request
+to the language server."
   :type 'boolean
   :group 'company-lsp)
 
 (defun company-lsp--trigger-characters ()
+  "Return a list of completion trigger characters specified by server."
   (when-let (completionProvider (lsp--capability "completionProvider"))
     (gethash "triggerCharacters" completionProvider)))
 
 (defun company-lsp--completion-prefix ()
+  "Return the completion prefix.
+
+Return value is compatible with the `prefix' command of a company backend.
+
+Return nil if no completion should be triggered. Return a string
+as the prefix to be completed, or a cons cell of (prefix . t) to bypass
+`company-minimum-prefix-length' for trigger characters."
   (if-let (trigger-chars (company-lsp--trigger-characters))
       (let ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char) (length trigger-char))
                                           trigger-chars)))
-            (trigger-regex (reduce (lambda (accum elem)
+            (trigger-regex (cl-reduce (lambda (accum elem)
                                      (concat accum "|" (regexp-quote elem)))
                                    trigger-chars
                                    :initial-value (regexp-quote (car trigger-chars))
@@ -61,21 +72,33 @@ request to the language server."
 
 
 (defun company-lsp--make-candidate (item)
+  "Convert a CompletionItem JSON data to a string.
+
+ITEM is a hashtable representing the CompletionItem interface.
+
+The returned string has a lsp-completion-item property with the
+value of ITEM."
   (propertize (gethash "label" item) 'lsp-completion-item item))
 
-(defun lsp-company-mode--insert-completion-text (candidate)
+(defun company-lsp--insert-completion-text (candidate)
+  "Replace a CompletionItem's label with its insertText.
+
+CANDIDATE is a string returned by `company-lsp--make-candidate'."
   (let* ((item (plist-get (text-properties-at 0 candidate) 'lsp-completion-item))
          (label (gethash "label" item))
          (start (- (point) (length label)))
          (insert-text (gethash "insertText" item)))
     (when insert-text
-      (assert (string-equal (buffer-substring-no-properties start (point)) label))
+      (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
       (delete-char (length label))
       (insert insert-text))))
 
 ;;;###autoload
-(defun company-lsp (command &optional arg &rest ignored)
+(defun company-lsp (command &optional arg &rest _)
+  "Define a company backend for lsp-mode.
+
+See the documentation of `company-backends' for COMMAND and ARG."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend #'company-lsp))
@@ -101,7 +124,7 @@ request to the language server."
     (no-cache (not company-lsp-cache-candidates))
     (annotation (lsp--annotate arg))
     (match (length arg))
-    (post-completion (lsp-company-mode--insert-completion-text arg))
+    (post-completion (company-lsp--insert-completion-text arg))
     ))
 
 (provide 'company-lsp)
