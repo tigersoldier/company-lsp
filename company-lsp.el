@@ -63,10 +63,10 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
       (let ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char) (length trigger-char))
                                           trigger-chars)))
             (trigger-regex (cl-reduce (lambda (accum elem)
-                                     (concat accum "|" (regexp-quote elem)))
-                                   trigger-chars
-                                   :initial-value (regexp-quote (car trigger-chars))
-                                   :start 1)))
+                                        (concat accum "|" (regexp-quote elem)))
+                                      trigger-chars
+                                      :initial-value (regexp-quote (car trigger-chars))
+                                      :start 1)))
         (company-grab-symbol-cons trigger-regex max-trigger-len))
     (company-grab-symbol)))
 
