@@ -1,7 +1,7 @@
 ;;; company-lsp.el --- Company completion backend for lsp-mode.
 
 ;; Version: 1.0
-;; Package-Requires: ((emacs "25.1") (lsp-mode "2.0") (company "0.9.0"))
+;; Package-Requires: ((emacs "25.1") (lsp-mode "2.0") (company "0.9.0") (s "1.2.0"))
 ;; URL: https://github.com/tigersoldier/company-lsp
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 (require 'cl-lib)
 (require 'company)
 (require 'lsp-mode)
+(require 's)
 
 (defgroup company-lsp nil
   "Company completion backend for lsp-mode."
@@ -60,16 +61,29 @@ Return nil if no completion should be triggered. Return a string
 as the prefix to be completed, or a cons cell of (prefix . t) to bypass
 `company-minimum-prefix-length' for trigger characters."
   (if-let (trigger-chars (company-lsp--trigger-characters))
-      (let ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char) (length trigger-char))
-                                          trigger-chars)))
-            (trigger-regex (cl-reduce (lambda (accum elem)
-                                        (concat accum "|" (regexp-quote elem)))
-                                      trigger-chars
-                                      :initial-value (regexp-quote (car trigger-chars))
-                                      :start 1)))
-        (company-grab-symbol-cons trigger-regex max-trigger-len))
+      (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
+                                                    (length trigger-char))
+                                                  trigger-chars)))
+             (trigger-regex (cl-reduce (lambda (accum elem)
+                                         (concat accum "|" (regexp-quote elem)))
+                                       trigger-chars
+                                       :initial-value (regexp-quote (car trigger-chars))
+                                       :start 1))
+             (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
+        ;; Some major modes define trigger characters as part of the symbol.
+        ;; Company will consider the trigger character as part of the prefix
+        ;; while the server doesn't. Remove the leading trigger character to
+        ;; solve this issue.
+        (let* ((symbol (if (consp symbol-cons)
+                           (car symbol-cons)
+                         symbol-cons))
+               (trigger-char (seq-find (lambda (trigger-char)
+                                         (s-starts-with? trigger-char symbol))
+                                       trigger-chars)))
+          (if trigger-char
+              (cons (substring symbol (length trigger-char)) t)
+            symbol)))
     (company-grab-symbol)))
-
 
 (defun company-lsp--make-candidate (item)
   "Convert a CompletionItem JSON data to a string.
@@ -124,9 +138,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (no-cache (not company-lsp-cache-candidates))
     (annotation (lsp--annotate arg))
     (match (length arg))
-    (post-completion (company-lsp--insert-completion-text arg))
-    ))
+    (post-completion (company-lsp--insert-completion-text arg))))
 
 (provide 'company-lsp)
-
 ;;; company-lsp.el ends here
