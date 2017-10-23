@@ -1,3 +1,5 @@
+[![MELPA](https://melpa.org/packages/company-lsp-badge.svg)](https://melpa.org/#/company-lsp)
+
 # company-lsp
 [Company] completion backend for [lsp-mode].
 
@@ -11,7 +13,10 @@ It provides features that are not available by using `company-capf` + `lsp-mode`
 
 ## Usage
 
-Simply add `company-lsp` to `company-backends`:
+Company-lsp is available on [MELPA]. To install it, first [setup
+MELPA][setup-melpa], then `M-x package-install <RET> company-lsp`.
+
+After installing company-lsp, simply add `company-lsp` to `company-backends`:
 
 ```elisp
 (require 'company-lsp)
@@ -27,3 +32,5 @@ Simply add `company-lsp` to `company-backends`:
 
 [company]: http://company-mode.github.io/
 [lsp-mode]: https://github.com/emacs-lsp/lsp-mode
+[melpa]: https://melpa.org
+[setup-melpa]: https://melpa.org/#/getting-started
