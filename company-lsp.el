@@ -105,84 +105,47 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
       (delete-char (length label))
       (insert insert-text))))
 
-(defvar-local company-lsp-response nil
-  "Response from the server")
+(defvar-local company-lsp--pending-requests (make-hash-table))
 
-(defvar-local company-lsp-callback nil
-  "Callback from company")
+(defcustom company-lsp-async nil
+  "Whether or not to use async operations to fetch data."
+  :type 'boolean
+  :group 'company-lsp)
 
-(defvar-local company-lsp-ids nil
-  "List of request's id that should be processed")
-
-(defvar-local company-lsp-mutex (make-mutex "COMPANY-LSP") "")
-(defvar-local company-lsp-cond-var (make-condition-variable company-lsp-mutex "COMPANY-LSP") "")
-
-(defun company-lsp-on-message (p msg)
+(defun company-lsp--on-message (p msg)
   "Function called just after `lsp--parser-on-message' using `advice-add'.
-It is executed in the main thread.
 This hook processes all the responses and filter the ones with an id that is in
 `company-lsp-ids'.
-When a response is received, it informs the thread created that it can
-processes the response.
 P and MSG are the parameters from `lsp--parser-on-message'."
   (let* ((json-array-type 'list)
 	 (json-object-type 'hash-table)
 	 (json-false nil)
 	 (json-data (json-read-from-string msg)))
     (pcase (lsp--get-message-type json-data)
-      ('response (let ((id-msg (gethash "id" json-data nil)))
-		   (with-mutex company-lsp-mutex
-		     (when (member id-msg company-lsp-ids)
-		       ;; If a response is received before our sub thread read the interesting one,
-		       ;; the response is overwritten and it would be lost.
-		       ;; So we save it
-		       (setq company-lsp-response (lsp--parser-response-result p))
-		       ;; Inform the thread that it can read the response
-		       (condition-notify company-lsp-cond-var))))))))
-
-(advice-add 'lsp--parser-on-message :after 'company-lsp-on-message)
-
-(defun company-lsp-thread-process (id)
-  "Function executed in a sub thread.
-It waits for the response from the main thread and then call the callback.
-It processes only the response that has an id equal to ID."
-  (let ((id-sent id) response)
-    (with-mutex company-lsp-mutex
-      ;; Add our request id to a list.
-      ;; When a response is received when can filter the interesting ones
-      (push id-sent company-lsp-ids)
-      ;; As the response is processed in the main thread, we wait for it.
-      (condition-wait company-lsp-cond-var)
-      ;; Process only the last user-requested completion
-      (when (or (null company-lsp-ids)
-		(= id-sent (car company-lsp-ids)))
-	;; Notify all the others thread that they can exit.
-	;; It shouldn't be necessary, but if the language server crashes and doesn't send a
-	;; response, a thread could still wait for it.
-	(condition-notify company-lsp-cond-var t)
-	(setq response company-lsp-response)
-	(setq company-lsp-ids nil)))
-    (when-let* ((items (cond ((hash-table-p response) (gethash "items" response nil))
+      ('response
+       (when-let* ((id-msg (gethash "id" json-data nil))
+		   (callback (gethash id-msg company-lsp--pending-requests)))
+	 (remhash id-msg company-lsp--pending-requests)
+	 (let* ((response (lsp--parser-response-result p))
+		(items (cond ((hash-table-p response) (gethash "items" response nil))
 			     ((sequencep response) response))))
-      (funcall company-lsp-callback (mapcar #'company-lsp--make-candidate
-					    (lsp--sort-completions items))))))
+	   (funcall callback (mapcar #'company-lsp--make-candidate
+				     (lsp--sort-completions items)))))))))
 
-(defun company-lsp-thread (cb)
-  "Sends the requests and launch a thread that wait for the response.
+(advice-add 'lsp--parser-on-message :after 'company-lsp--on-message)
+
+(defun company-lsp--async (cb)
+  "Sends the requests and push in `company-lsp--pending-requests'..
+the msg id and the corresponding callback.
 CB is the callback that company gives us."
-  ;; Save the callback to access it from the other thread.
-  ;; I suppose it's always the same callback, otherwise it should be
-  ;; give as parameter to company-lsp-thread-process
-  (setq company-lsp-callback cb)
   (lsp--send-changes lsp--cur-workspace)
   ;; Call lsp--send-request with no-wait set to t
   (lsp--send-request (lsp--make-request
 		      "textDocument/completion"
 		      (lsp--text-document-position-params))
 		     t)
-  (lexical-let ((id (lsp--workspace-last-id lsp--cur-workspace)))
-    ;; Save the request id and give it to the new thread
-    (make-thread (lambda nil (company-lsp-thread-process id)) "THREAD-LSP")))
+  (let ((id (lsp--workspace-last-id lsp--cur-workspace)))
+    (puthash id cb company-lsp--pending-requests)))
 
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
@@ -198,7 +161,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
              (or (company-lsp--completion-prefix) 'stop)))
     (candidates
      (cons :async
-	   (if (>= emacs-major-version 26) #'company-lsp-thread
+	   (if company-lsp-async #'company-lsp--async
 	     #'(lambda (callback)
 		 (lsp--send-changes lsp--cur-workspace)
 		 (let* ((resp (lsp--send-request (lsp--make-request
