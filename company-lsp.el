@@ -64,7 +64,7 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
       (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
                                                     (length trigger-char))
                                                   trigger-chars)))
-             (trigger-regex (s-join "\\|" trigger-chars))
+             (trigger-regex (s-join "\\|" (mapcar #'regexp-quote trigger-chars)))
              (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
         ;; Some major modes define trigger characters as part of the symbol. For
         ;; example "@" is considered a vaild part of symbol in java-mode.
