@@ -131,10 +131,11 @@ P and MSG are the parameters from `lsp--parser-on-message'."
 	 (json-data (json-read-from-string msg)))
     (pcase (lsp--get-message-type json-data)
       ('response
-       (when-let* ((id-msg (gethash "id" json-data nil))
-		   (callback (gethash id-msg company-lsp--pending-requests)))
-	 (remhash id-msg company-lsp--pending-requests)
-	 (company-lsp--on-completion (lsp--parser-response-result p) callback))))))
+       (let* ((id-msg (gethash "id" json-data nil))
+              (callback (gethash id-msg company-lsp--pending-requests)))
+         (when (and id-msg callback)
+           (remhash id-msg company-lsp--pending-requests)
+           (company-lsp--on-completion (lsp--parser-response-result p) callback)))))))
 
 (advice-add 'lsp--parser-on-message :after 'company-lsp--on-message)
 
