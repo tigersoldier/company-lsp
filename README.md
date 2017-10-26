@@ -10,6 +10,7 @@ It provides features that are not available by using `company-capf` + `lsp-mode`
    emacs-lsp/lsp-mode#123
  * Use completion item's `label` as completion labels and replace it with its
    `insertText` if available.
+ * Fetch completion candidates asynchronously (Thanks @sebastiencs).
 
 ## Usage
 
@@ -29,6 +30,8 @@ After installing company-lsp, simply add `company-lsp` to `company-backends`:
     completion candidates so company filters the candidates as completion
     progresses. If set to `nil', each incremental completion triggers a
     completion request to the language server.
+ * `company-lsp-async`: When set to non-til, fetch completion candidates
+    asynchronously.
 
 [company]: http://company-mode.github.io/
 [lsp-mode]: https://github.com/emacs-lsp/lsp-mode
