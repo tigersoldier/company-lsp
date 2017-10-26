@@ -97,21 +97,66 @@ ITEM is a hashtable representing the CompletionItem interface.
 
 The returned string has a lsp-completion-item property with the
 value of ITEM."
+  ;; The property has to be the same as added by `lsp--make-completion-item' so
+  ;; that `lsp--annotate' can use it.
   (propertize (gethash "label" item) 'lsp-completion-item item))
 
-(defun company-lsp--insert-completion-text (candidate)
-  "Replace a CompletionItem's label with its insertText.
+(defun company-lsp--candidate-item (candidate)
+  "Retrieve the CompletionItem hashtable associated with CANDIDATE.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (let* ((item (plist-get (text-properties-at 0 candidate) 'lsp-completion-item))
+  (plist-get (text-properties-at 0 candidate) 'lsp-completion-item))
+
+(defun company-lsp--resolve-candidate (candidate &rest props)
+  "Resolve a completion candidate to fill some properties.
+
+CANDIDATE is a string returned by `company-lsp--make-candidate'.
+PROPS are strings of property names of CompletionItem hashtable
+to be resolved.
+
+The completionItem/resolve request will only be sent to the
+server if the candidate has not been resolved before, and at lest
+one of the PROPS of the CompletionItem is missing.
+
+Returns CANDIDATE with the resolved CompletionItem."
+  (unless (plist-get (text-properties-at 0 candidate) 'company-lsp-resolved)
+    (let ((item (company-lsp--candidate-item candidate)))
+      (when (seq-some (lambda (prop)
+                        (null (gethash prop item)))
+                      props)
+        (let ((resolved-item (lsp--resolve-completion item))
+              (len (length candidate)))
+          (put-text-property 0 len
+                             'lsp-completion-item resolved-item
+                             candidate)
+          (put-text-property 0 len
+                             'company-lsp-resolved t
+                             candidate)))))
+  candidate)
+
+(defun company-lsp--post-completion (candidate)
+  "Replace a CompletionItem's label with its insertText. Apply text edits.
+
+CANDIDATE is a string returned by `company-lsp--make-candidate'."
+  (let* ((resolved-candidate (company-lsp--resolve-candidate candidate
+                                                             "insertText"
+                                                             "textEdit"
+                                                             "additionalTextEdits"))
+         (item (company-lsp--candidate-item candidate))
          (label (gethash "label" item))
          (start (- (point) (length label)))
-         (insert-text (gethash "insertText" item)))
-    (when insert-text
+         (insert-text (gethash "insertText" item))
+         (text-edit (gethash "textEdit" item))
+         (additional-text-edits (gethash "additionalTextEdits" item)))
+    (cond
+     (text-edit (lsp--apply-text-edit text-edit))
+     (insert-text
       (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
       (delete-char (length label))
-      (insert insert-text))))
+      (insert insert-text)))
+    (when additional-text-edits
+      (lsp--apply-text-edits additional-text-edits))))
 
 (defun company-lsp--on-completion (response callback)
   "Give the server RESPONSE to company's CALLBACK."
@@ -148,7 +193,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (no-cache (not company-lsp-cache-candidates))
     (annotation (lsp--annotate arg))
     (match (length arg))
-    (post-completion (company-lsp--insert-completion-text arg))))
+    (post-completion (company-lsp--post-completion arg))))
 
 (provide 'company-lsp)
 ;;; company-lsp.el ends here
