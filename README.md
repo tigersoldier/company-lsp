@@ -6,11 +6,11 @@
 It provides features that are not available by using `company-capf` + `lsp-mode`:
 
  * Support trigger characters. For example typing `.` will trigger completion
-   for TypeScript. There is a pull request to support it for `lsp-mode`:
-   emacs-lsp/lsp-mode#123
+   for TypeScript.
  * Use completion item's `label` as completion labels and replace it with its
    `insertText` if available.
  * Fetch completion candidates asynchronously (Thanks @sebastiencs).
+ * Apply text edits specified by completion candidates after completion.
 
 ## Usage
 
