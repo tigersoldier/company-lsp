@@ -37,14 +37,16 @@
   :prefix "company-lsp-"
   :group 'tools)
 
-(defcustom company-lsp-cache-candidates t
+(defcustom company-lsp-cache-candidates 'auto
   "Whether or not to cache completion candidates.
 
 When set to non-nil, company caches the completion candidates so
 company filters the candidates as completion progresses. If set
 to nil, each incremental completion triggers a completion request
 to the language server."
-  :type 'boolean
+  :type '(choice (const :tag "Respect server response" auto)
+                 (const :tag "Always cache" t)
+                 (const :tag "Never cache" nil))
   :group 'company-lsp)
 
 (defcustom company-lsp-async nil
@@ -52,8 +54,11 @@ to the language server."
   :type 'boolean
   :group 'company-lsp)
 
-(defvar-local company-lsp--pending-requests (make-hash-table)
-  "Hash table where keys are requests id and values are company's callback.")
+(defvar-local company-lsp--completion-cache nil
+  "Cached completion. It's an alist of (prefix . completion).
+
+PREFIX is the prefix string.
+COMPLETION is a plist of (:candidates :incomplete).")
 
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
@@ -158,12 +163,38 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (when additional-text-edits
       (lsp--apply-text-edits additional-text-edits))))
 
-(defun company-lsp--on-completion (response callback)
-  "Give the server RESPONSE to company's CALLBACK."
-  (let* ((items (cond ((hash-table-p response) (gethash "items" response nil))
-                      ((sequencep response) response))))
-    (funcall callback (mapcar #'company-lsp--make-candidate
-                              (lsp--sort-completions items)))))
+(defun company-lsp--on-completion (response prefix callback)
+  "Give the server RESPONSE to company's CALLBACK.
+
+PREFIX is a stirng of the prefix when the completion is requested."
+  (let* ((incomplete (and (hash-table-p response) (gethash "isIncomplete" response)))
+         (items (cond ((hash-table-p response) (gethash "items" response))
+                      ((sequencep response) response)))
+         (candidates (mapcar #'company-lsp--make-candidate
+                             (lsp--sort-completions items))))
+    (when (null company-lsp--completion-cache)
+      (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache)
+      (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache))
+    (when (eq company-lsp-cache-candidates 'auto)
+      ;; Only cache candidates on auto mode. If it's t company caches the
+      ;; candidates for us.
+      (setq company-lsp--completion-cache
+            (cons (cons prefix `(:incomplete ,incomplete :candidates ,candidates))
+                  company-lsp--completion-cache)))
+    (funcall callback candidates)))
+
+(defun company-lsp--cleanup-cache (_)
+  "Clean up completion cache and company hooks."
+  (setq company-lsp--completion-cache nil)
+  (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache)
+  (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache))
+
+(defun company-lsp--cache-get (prefix)
+  "Get the cached completion for PREFIX.
+
+Return a plist of (:incomplete :candidates) if cache for PREFIX
+exists. Otherwise return nil."
+  (cdr (assoc prefix company-lsp--completion-cache)))
 
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
@@ -180,17 +211,24 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (candidates
      (cons :async
            #'(lambda (callback)
-               (lsp--send-changes lsp--cur-workspace)
-               (let ((req (lsp--make-request "textDocument/completion"
-                                             (lsp--text-document-position-params))))
-                 (if company-lsp-async
-                     (lsp--send-request-async req
-                                              (lambda (resp)
-                                                (company-lsp--on-completion resp callback)))
-                   (company-lsp--on-completion (lsp--send-request req)
-                                               callback))))))
+               (let ((cache (company-lsp--cache-get arg)))
+                 (if cache
+                     (funcall callback (plist-get cache :candidates))
+                   (lsp--send-changes lsp--cur-workspace)
+                   (let ((req (lsp--make-request "textDocument/completion"
+                                                 (lsp--text-document-position-params))))
+                     (if company-lsp-async
+                         (lsp--send-request-async req
+                                                  (lambda (resp)
+                                                    (company-lsp--on-completion resp arg callback)))
+                       (company-lsp--on-completion (lsp--send-request req)
+                                                   arg
+                                                   callback))))))))
     (sorted t)
-    (no-cache (not company-lsp-cache-candidates))
+    (no-cache (if (eq company-lsp-cache-candidates 'auto)
+                  (let ((cache (company-lsp--cache-get arg)))
+                    (and cache (plist-get cache :incomplete)))
+                (not company-lsp-cache-candidates)))
     (annotation (lsp--annotate arg))
     (match (length arg))
     (post-completion (company-lsp--post-completion arg))))

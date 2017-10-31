@@ -11,6 +11,7 @@ It provides features that are not available by using `company-capf` + `lsp-mode`
    `insertText` if available.
  * Fetch completion candidates asynchronously (Thanks @sebastiencs).
  * Apply text edits specified by completion candidates after completion.
+ * Do not cache the completion candidates if they are incomplete.
 
 ## Usage
 
@@ -26,10 +27,12 @@ After installing company-lsp, simply add `company-lsp` to `company-backends`:
 
 ## Customization
 
- * `company-lsp-cache-candidates`: When set to non-nil, company caches the
-    completion candidates so company filters the candidates as completion
-    progresses. If set to `nil', each incremental completion triggers a
-    completion request to the language server.
+ * `company-lsp-cache-candidates`: Can be set to `'auto`, `t`, or `nil`. When
+    set to `'auto`, candidates will not be cached if the server returns
+    incomplete completion list. When set to `t`, company caches the completion
+    candidates and filters the candidates as completion progresses. If set to
+    `nil`, each incremental completion triggers a completion request to the
+    language server.
  * `company-lsp-async`: When set to non-til, fetch completion candidates
     asynchronously.
 
