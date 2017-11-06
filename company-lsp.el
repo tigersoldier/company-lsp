@@ -54,6 +54,16 @@ to the language server."
   :type 'boolean
   :group 'company-lsp)
 
+(defcustom company-lsp-enable-snippet t
+   "Whether or not to support expanding completion snippet.
+
+If set to non-nil, company-lsp will register client capabilities
+for snippet support. When the server returns completion item with
+snippet, company-lsp will replace the label of the completion
+item with the snippet and use yas-snippet to expand it."
+   :type 'boolean
+   :group 'company-lsp)
+
 (defvar-local company-lsp--completion-cache nil
   "Cached completion. It's an alist of (prefix . completion).
 
@@ -152,17 +162,24 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          (label (gethash "label" item))
          (start (- (point) (length label)))
          (insert-text (gethash "insertText" item))
+         ;; 1 = plaintext, 2 = snippet
+         (insert-text-format (gethash "insertTextFormat" item))
          (text-edit (gethash "textEdit" item))
          (additional-text-edits (gethash "additionalTextEdits" item)))
     (cond
      (text-edit (lsp--apply-text-edit text-edit))
-     (insert-text
+     ((and insert-text (not (eq insert-text-format 2)))
       (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
       (delete-char (length label))
       (insert insert-text)))
     (when additional-text-edits
-      (lsp--apply-text-edits additional-text-edits))))
+      (lsp--apply-text-edits additional-text-edits))
+    (when (and company-lsp-enable-snippet
+               (fboundp 'yas-expand-snippet)
+               insert-text
+               (eq insert-text-format 2))
+      (yas-expand-snippet insert-text start (point)))))
 
 (defun company-lsp--on-completion (response prefix callback)
   "Give the server RESPONSE to company's CALLBACK.
@@ -233,6 +250,15 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (annotation (lsp--annotate arg))
     (match (length arg))
     (post-completion (company-lsp--post-completion arg))))
+
+(defun company-lsp--client-capabilities ()
+  "Return the extra client capabilities supported by company-lsp."
+  (when company-lsp-enable-snippet
+    '(:textDocument (:completion (:completionItem (:snippetSupport t))))))
+
+(add-hook 'lsp-before-initialize-hook
+          (lambda ()
+            (lsp-register-client-capabilities 'company-lsp #'company-lsp--client-capabilities)))
 
 (provide 'company-lsp)
 ;;; company-lsp.el ends here
