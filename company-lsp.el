@@ -148,7 +148,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
                                                              "insertText"
                                                              "textEdit"
                                                              "additionalTextEdits"))
-         (item (company-lsp--candidate-item candidate))
+         (item (company-lsp--candidate-item resolved-candidate))
          (label (gethash "label" item))
          (start (- (point) (length label)))
          (insert-text (gethash "insertText" item))
