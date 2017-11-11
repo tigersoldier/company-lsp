@@ -62,8 +62,8 @@ COMPLETION is a plist of (:candidates :incomplete).")
 
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
-  (when-let (completionProvider (lsp--capability "completionProvider"))
-    (gethash "triggerCharacters" completionProvider)))
+  (let ((provider (lsp--capability "completionProvider")))
+    (and provider (gethash "triggerCharacters" provider))))
 
 (defun company-lsp--completion-prefix ()
   "Return the completion prefix.
@@ -73,27 +73,28 @@ Return value is compatible with the `prefix' command of a company backend.
 Return nil if no completion should be triggered. Return a string
 as the prefix to be completed, or a cons cell of (prefix . t) to bypass
 `company-minimum-prefix-length' for trigger characters."
-  (if-let (trigger-chars (company-lsp--trigger-characters))
-      (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
-                                                    (length trigger-char))
-                                                  trigger-chars)))
-             (trigger-regex (s-join "\\|" (mapcar #'regexp-quote trigger-chars)))
-             (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
-        ;; Some major modes define trigger characters as part of the symbol. For
-        ;; example "@" is considered a vaild part of symbol in java-mode.
-        ;; Company will grab the trigger character as part of the prefix while
-        ;; the server doesn't. Remove the leading trigger character to solve
-        ;; this issue.
-        (let* ((symbol (if (consp symbol-cons)
-                           (car symbol-cons)
-                         symbol-cons))
-               (trigger-char (seq-find (lambda (trigger-char)
-                                         (s-starts-with? trigger-char symbol))
-                                       trigger-chars)))
-          (if trigger-char
-              (cons (substring symbol (length trigger-char)) t)
-            symbol-cons)))
-    (company-grab-symbol)))
+  (let ((trigger-chars (company-lsp--trigger-characters)))
+    (if trigger-chars
+        (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
+                                                      (length trigger-char))
+                                                    trigger-chars)))
+               (trigger-regex (s-join "\\|" (mapcar #'regexp-quote trigger-chars)))
+               (symbol-cons (company-grab-symbol-cons trigger-regex max-trigger-len)))
+          ;; Some major modes define trigger characters as part of the symbol. For
+          ;; example "@" is considered a vaild part of symbol in java-mode.
+          ;; Company will grab the trigger character as part of the prefix while
+          ;; the server doesn't. Remove the leading trigger character to solve
+          ;; this issue.
+          (let* ((symbol (if (consp symbol-cons)
+                             (car symbol-cons)
+                           symbol-cons))
+                 (trigger-char (seq-find (lambda (trigger-char)
+                                           (s-starts-with? trigger-char symbol))
+                                         trigger-chars)))
+            (if trigger-char
+                (cons (substring symbol (length trigger-char)) t)
+              symbol-cons)))
+      (company-grab-symbol))))
 
 (defun company-lsp--make-candidate (item)
   "Convert a CompletionItem JSON data to a string.
