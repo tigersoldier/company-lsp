@@ -65,6 +65,9 @@ item with the snippet and use yas-snippet to expand it."
   :type 'boolean
   :group 'company-lsp)
 
+(defvar company-lsp--snippet-functions '(("rust" . company-lsp--rust-completion-snippet))
+  "Alist of functions to insert our snippets for each language.")
+
 (defvar-local company-lsp--completion-cache nil
   "Cached completion. It's an alist of (prefix . completion).
 
@@ -168,7 +171,7 @@ to expand its arguments."
 (defun company-lsp--try-expand-snippet (item)
   "Fallback function used when the language server doesn't provide snippet.
 It looks for function corresponding to the language in
-`company-lsp--rust-completion-snippet'.
+`company-lsp--snippet-functions'.
 ITEM is a CompletionItem."
   (-when-let* ((language-id-fn (lsp--client-language-id (lsp--workspace-client lsp--cur-workspace)))
                (language-id (funcall language-id-fn (current-buffer)))
