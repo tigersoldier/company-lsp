@@ -1,7 +1,7 @@
 ;;; company-lsp.el --- Company completion backend for lsp-mode.  -*- lexical-binding: t -*-
 
 ;; Version: 1.0
-;; Package-Requires: ((emacs "25.1") (lsp-mode "3.1") (company "0.9.0") (s "1.2.0"))
+;; Package-Requires: ((emacs "25.1") (lsp-mode "3.1") (company "0.9.0") (s "1.2.0") (dash "2.11.0"))
 ;; URL: https://github.com/tigersoldier/company-lsp
 
 ;; This program is free software: you can redistribute it and/or modify
@@ -31,6 +31,7 @@
 (require 'company)
 (require 'lsp-mode)
 (require 's)
+(require 'dash)
 
 (defgroup company-lsp nil
   "Company completion backend for lsp-mode."
@@ -55,14 +56,14 @@ to the language server."
   :group 'company-lsp)
 
 (defcustom company-lsp-enable-snippet t
-   "Whether or not to support expanding completion snippet.
+  "Whether or not to support expanding completion snippet.
 
 If set to non-nil, company-lsp will register client capabilities
 for snippet support. When the server returns completion item with
 snippet, company-lsp will replace the label of the completion
 item with the snippet and use yas-snippet to expand it."
-   :type 'boolean
-   :group 'company-lsp)
+  :type 'boolean
+  :group 'company-lsp)
 
 (defvar-local company-lsp--completion-cache nil
   "Cached completion. It's an alist of (prefix . completion).
@@ -150,6 +151,31 @@ Returns CANDIDATE with the resolved CompletionItem."
                              candidate)))))
   candidate)
 
+(defun company-lsp--rust-completion-snippet (item)
+  "Function providing snippet with the rust language.
+It parses the function's signature in ITEM (a CompletionItem)
+to expand its arguments."
+  (-when-let* ((kind (gethash "kind" item))
+               (is-function (= kind 3)))
+    (let* ((detail (gethash "detail" item))
+           (snippet (when (and detail (s-matches? "^\\(pub \\)?\\(unsafe \\)?fn " detail))
+                      (-some--> (substring detail (1+ (s-index-of "(" detail)) (s-index-of ")" detail))
+                                (replace-regexp-in-string "^[^,]*self\\(, \\)?" "" it)
+                                (s-split ", " it)
+                                (mapconcat (lambda (x) (format "${%s}" x)) it ", ")))))
+      (concat "(" (or snippet "$1") ")$0"))))
+
+(defun company-lsp--try-expand-snippet (item)
+  "Fallback function used when the language server doesn't provide snippet.
+It looks for function corresponding to the language in
+`company-lsp--rust-completion-snippet'.
+ITEM is a CompletionItem."
+  (-when-let* ((language-id-fn (lsp--client-language-id (lsp--workspace-client lsp--cur-workspace)))
+               (language-id (funcall language-id-fn (current-buffer)))
+               (fn (alist-get language-id company-lsp--snippet-functions nil nil 'equal))
+               (snippet (funcall fn item)))
+    (yas-expand-snippet snippet)))
+
 (defun company-lsp--post-completion (candidate)
   "Replace a CompletionItem's label with its insertText. Apply text edits.
 
@@ -176,10 +202,10 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (when additional-text-edits
       (lsp--apply-text-edits additional-text-edits))
     (when (and company-lsp-enable-snippet
-               (fboundp 'yas-expand-snippet)
-               insert-text
-               (eq insert-text-format 2))
-      (yas-expand-snippet insert-text start (point)))))
+               (fboundp 'yas-expand-snippet))
+      (if (and insert-text (eq insert-text-format 2))
+          (yas-expand-snippet insert-text start (point))
+        (company-lsp--try-expand-snippet item)))))
 
 (defun company-lsp--on-completion (response prefix callback)
   "Give the server RESPONSE to company's CALLBACK.
