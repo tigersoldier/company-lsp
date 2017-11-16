@@ -1,0 +1,10 @@
+(source gnu)
+(source melpa)
+(depends-on "company")
+(depends-on "dash")
+(depends-on "lsp-mode")
+(depends-on "s")
+(package-file "company-lsp.el")
+(files "*.el")
+(development
+ (depends-on "buttercup"))

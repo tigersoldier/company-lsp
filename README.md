@@ -1,4 +1,5 @@
 [![MELPA](https://melpa.org/packages/company-lsp-badge.svg)](https://melpa.org/#/company-lsp)
+[![Build Status](https://travis-ci.org/tigersoldier/company-lsp.svg?branch=master)](https://travis-ci.org/tigersoldier/company-lsp)
 
 # company-lsp
 [Company] completion backend for [lsp-mode].
