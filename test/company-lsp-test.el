@@ -104,4 +104,11 @@
         (puthash "detail" "pub unsafe fn foo(arg1) -> bar" item)
         (expect (company-lsp--rust-completion-snippet item)
                 :to-equal "(${arg1})$0")))
-    ))
+    )
+  (describe "With non-functions"
+    (it "Should return nil"
+      (let ((item (make-hash-table :test 'equal)))
+        (puthash "kind" 2 item)
+        (puthash "detail" "(1, 2)" item)
+        (expect (company-lsp--rust-completion-snippet item)
+                :to-be nil)))))
