@@ -215,7 +215,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
                (fboundp 'yas-expand-snippet))
       (if (and insert-text (eq insert-text-format 2))
           (yas-expand-snippet insert-text start (point))
-        (-when-let ((fallback-snippet (company-lsp--fallback-snippet item)))
+        (-when-let (fallback-snippet (company-lsp--fallback-snippet item))
           (yas-expand-snippet fallback-snippet))))))
 
 (defun company-lsp--on-completion (response prefix callback)
