@@ -77,6 +77,20 @@
         (expect (company-lsp--rust-completion-snippet item)
                 :to-equal "(${arg1}, ${arg2})$0")))
 
+    (it "Remove mut self"
+      (let ((item (make-hash-table :test 'equal)))
+        (puthash "kind" 3 item)
+        (puthash "detail" "fn foo(&mut self, arg1, arg2) -> bar" item)
+        (expect (company-lsp--rust-completion-snippet item)
+                :to-equal "(${arg1}, ${arg2})$0")))
+
+    (it "Remove self with lifetime"
+      (let ((item (make-hash-table :test 'equal)))
+        (puthash "kind" 3 item)
+        (puthash "detail" "fn foo(&'a self, arg1, arg2) -> bar" item)
+        (expect (company-lsp--rust-completion-snippet item)
+                :to-equal "(${arg1}, ${arg2})$0")))
+
     (it "Can handle self as the only parameter"
       (let ((item (make-hash-table :test 'equal)))
         (puthash "kind" 3 item)
