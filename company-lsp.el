@@ -76,6 +76,9 @@ item with the snippet and use yas-snippet to expand it."
 PREFIX is the prefix string.
 COMPLETION is a plist of (:candidates :incomplete).")
 
+(defvar-local company-lsp--line-backup nil
+  "A copy of current line before modified by company-mode.")
+
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
   (let ((provider (lsp--capability "completionProvider")))
@@ -203,7 +206,15 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          (text-edit (gethash "textEdit" item))
          (additional-text-edits (gethash "additionalTextEdits" item)))
     (cond
-     (text-edit (lsp--apply-text-edit text-edit))
+     (text-edit
+      (goto-char (line-beginning-position))
+      (delete-char (- (line-end-position) (line-beginning-position)))
+      (insert company-lsp--line-backup)
+      (lsp--apply-text-edit text-edit)
+      (let* ((range (gethash "range" text-edit))
+             (start-point (lsp--position-to-point (gethash "start" range)))
+             (new-text-length (length (gethash "newText" text-edit))))
+        (goto-char (+ start-point new-text-length))))
      ((and insert-text (not (eq insert-text-format 2)))
       (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
@@ -286,6 +297,8 @@ See the documentation of `company-backends' for COMMAND and ARG."
                      (funcall callback (plist-get cache :candidates))
                    (let ((req (lsp--make-request "textDocument/completion"
                                                  (lsp--text-document-position-params))))
+                     (setq company-lsp--line-backup
+                           (buffer-substring (line-beginning-position) (line-end-position)))
                      (if company-lsp-async
                          (lsp--send-request-async req
                                                   (lambda (resp)
