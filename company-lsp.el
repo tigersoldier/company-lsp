@@ -204,7 +204,8 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          ;; 1 = plaintext, 2 = snippet
          (insert-text-format (gethash "insertTextFormat" item))
          (text-edit (gethash "textEdit" item))
-         (additional-text-edits (gethash "additionalTextEdits" item)))
+         (additional-text-edits (gethash "additionalTextEdits" item))
+         (point-before-post-complete (point)))
     (cond
      (text-edit
       (goto-char (line-beginning-position))
@@ -227,7 +228,21 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
       (if (and insert-text (eq insert-text-format 2))
           (yas-expand-snippet insert-text start (point))
         (-when-let (fallback-snippet (company-lsp--fallback-snippet item))
-          (yas-expand-snippet fallback-snippet))))))
+          (yas-expand-snippet fallback-snippet))))
+    ;; Here we set this-command to a `self-insert-command'
+    ;; so that company may retrigger idle completion after the snippet expansion
+    ;; (~`company-post-command').
+    ;; This is a bit of a hack and maybe that will change in the future.
+    ;; This is useful for example when the completed candidate is a namespace
+    ;; and the annotation text (inserted snippet) is the scope operator.
+    ;;
+    ;; std| -> std::   (=> idle completion desired here)
+    ;;         stderr
+    ;;         ...
+    ;;
+    ;; See https://github.com/company-mode/company-mode/issues/143
+    (unless (eq (point) point-before-post-complete)
+      (setq this-command 'self-insert-command))))
 
 (defun company-lsp--on-completion (response prefix callback)
   "Give the server RESPONSE to company's CALLBACK.
