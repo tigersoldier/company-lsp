@@ -41,10 +41,19 @@
 (defcustom company-lsp-cache-candidates 'auto
   "Whether or not to cache completion candidates.
 
-When set to non-nil, company caches the completion candidates so
-company filters the candidates as completion progresses. If set
-to nil, each incremental completion triggers a completion request
-to the language server."
+When set to 'auto, company-lsp caches the completion. It sends
+incremental completion requests to the server if and only if the
+cached results are incomplete. The candidate list may not be
+sorted or filtered as the server would for cached completion
+results.
+
+When set to t, company-mode caches the completion. It won't send
+incremental completion requests to the server.
+
+When set to nil, results are not cached at all. The candidates
+are always sorted and filtered by the server. Use this option if
+the server handles caching for incremental completion or
+sorting/matching provided by the server is critical."
   :type '(choice (const :tag "Respect server response" auto)
                  (const :tag "Always cache" t)
                  (const :tag "Never cache" nil))
@@ -280,9 +289,9 @@ Return a list of strings as the completion candidates."
     (when (eq company-lsp-cache-candidates 'auto)
       ;; Only cache candidates on auto mode. If it's t company caches the
       ;; candidates for us.
-      (setq company-lsp--completion-cache
-            (cons (cons prefix `(:incomplete ,incomplete :candidates ,candidates))
-                  company-lsp--completion-cache)))
+      (company-lsp--cache-put
+         prefix
+         `(:incomplete ,incomplete :candidates ,candidates)))
     candidates))
 
 (defun company-lsp--cleanup-cache (_)
@@ -291,12 +300,37 @@ Return a list of strings as the completion candidates."
   (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache)
   (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache))
 
+(defun company-lsp--cache-put (prefix candidates)
+  "Set cache for PREFIX to be CANDIDATES.
+
+CANDIDATES is a plist of (:incomplete :candidates). :incomplete is
+either t or nil. :candidates is a list of strings."
+  (setq company-lsp--completion-cache
+        (cons (cons prefix candidates)
+              company-lsp--completion-cache)))
+
 (defun company-lsp--cache-get (prefix)
   "Get the cached completion for PREFIX.
 
 Return a plist of (:incomplete :candidates) if cache for PREFIX
 exists. Otherwise return nil."
-  (cdr (assoc prefix company-lsp--completion-cache)))
+  (let ((cache (cdr (assoc prefix company-lsp--completion-cache)))
+        (len (length prefix))
+        previous-cache)
+    (if cache
+        cache
+      (cl-dotimes (i len)
+        (when (setq previous-cache
+                    (cdr (assoc (substring prefix 0 (- len i 1))
+                                company-lsp--completion-cache)))
+          (if (company-lsp--cache-incomplete-p previous-cache)
+              (cl-return nil)
+            (company-lsp--cache-put prefix previous-cache)
+            (cl-return previous-cache)))))))
+
+(defun company-lsp--cache-incomplete-p (cache-item)
+  "Determine whether a CACHE-ITEM is incomplete."
+  (plist-get cache-item :incomplete))
 
 (defun company-lsp--documentation (candidate)
   "Get the documentation from the item in the CANDIDATE.
@@ -360,10 +394,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
                              (company-lsp--candidates-async arg callback))))
          (company-lsp--candidates-sync arg)))
     (sorted t)
-    (no-cache (if (eq company-lsp-cache-candidates 'auto)
-                  (let ((cache (company-lsp--cache-get arg)))
-                    (and cache (plist-get cache :incomplete)))
-                (not company-lsp-cache-candidates)))
+    (no-cache (not (eq company-lsp-cache-candidates t)))
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (match (length arg))

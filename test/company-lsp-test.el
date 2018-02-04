@@ -126,3 +126,43 @@
         (puthash "detail" "(1, 2)" item)
         (expect (company-lsp--rust-completion-snippet item)
                 :to-be nil)))))
+
+(describe "Getting cache"
+  (it "Should return the cache item if prefix matches"
+    (let ((company-lsp--completion-cache nil)
+          (cache-item '(:incomplete nil ("foo" "bar"))))
+      (company-lsp--cache-put "prefix" cache-item)
+      (expect (company-lsp--cache-get "prefix")
+              :to-equal cache-item)))
+
+  (it "Should return the cache item of sub-prefix if it's complete"
+    (let ((cache-item '(:incomplete nil ("foo" "bar"))))
+      (setq company-lsp--completion-cache nil)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal nil)
+      (company-lsp--cache-put "" cache-item)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal cache-item)
+
+      (setq company-lsp--completion-cache nil)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal nil)
+      (company-lsp--cache-put "prefix" cache-item)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal cache-item)
+
+      (setq company-lsp--completion-cache nil)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal nil)
+      (company-lsp--cache-put "prefix123" cache-item)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal cache-item)))
+
+  (it "Should not return the cache item of sub-prefix if it's incomplete"
+    (let ((company-lsp--completion-cache nil)
+          (cache-item '(:incomplete t ("foo" "bar"))))
+      (company-lsp--cache-put "prefix" cache-item)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal nil))))
+
+
