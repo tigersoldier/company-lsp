@@ -31,12 +31,21 @@ After installing company-lsp, simply add `company-lsp` to `company-backends`:
 
 ## Customization
 
- * `company-lsp-cache-candidates`: Can be set to `'auto`, `t`, or `nil`. When
-    set to `'auto`, candidates will not be cached if the server returns
-    incomplete completion list. When set to `t`, company caches the completion
-    candidates and filters the candidates as completion progresses. If set to
-    `nil`, each incremental completion triggers a completion request to the
-    language server.
+ * `company-lsp-cache-candidates`: Can be set to `'auto`, `t`, or `nil`.
+
+    When set to `'auto`, company-lsp caches the completion. It sends
+    incremental completion requests to the server if and only if the
+    cached results are incomplete. The candidate list may not be
+    sorted or filtered as the server would for cached completion
+    results.
+
+    When set to `t`, company-mode caches the completion. It won't send
+    incremental completion requests to the server.
+
+    When set to `nil`, results are not cached at all. The candidates
+    are always sorted and filtered by the server. Use this option if
+    the server handles caching for incremental completion or
+    sorting/matching provided by the server is critical.
  * `company-lsp-async`: When set to non-nil, fetch completion candidates
     asynchronously.
  * `company-lsp-enable-snippet`: Set it to non-nil if you want to enable snippet
