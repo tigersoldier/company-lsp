@@ -244,10 +244,12 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (unless (eq (point) point-before-post-complete)
       (setq this-command 'self-insert-command))))
 
-(defun company-lsp--on-completion (response prefix callback)
-  "Give the server RESPONSE to company's CALLBACK.
+(defun company-lsp--on-completion (response prefix)
+  "Handle completion RESPONSE.
 
-PREFIX is a stirng of the prefix when the completion is requested."
+PREFIX is a string of the prefix when the completion is requested.
+
+Return a list of strings as the completion candidates."
   (let* ((incomplete (and (hash-table-p response) (gethash "isIncomplete" response)))
          (items (cond ((hash-table-p response) (gethash "items" response))
                       ((sequencep response) response)))
@@ -262,7 +264,7 @@ PREFIX is a stirng of the prefix when the completion is requested."
       (setq company-lsp--completion-cache
             (cons (cons prefix `(:incomplete ,incomplete :candidates ,candidates))
                   company-lsp--completion-cache)))
-    (funcall callback candidates)))
+    candidates))
 
 (defun company-lsp--cleanup-cache (_)
   "Clean up completion cache and company hooks."
@@ -292,6 +294,27 @@ which company can handle."
         (gethash "value" documentation)
       documentation)))
 
+(defun company-lsp--candidates-sync (prefix)
+  "Get completion candidates synchronously.
+
+PREFIX is the prefix string for completion.
+
+Return a list of strings as completion candidates."
+  (let ((req (lsp--make-request "textDocument/completion"
+                                (lsp--text-document-position-params))))
+    (company-lsp--on-completion (lsp--send-request req) prefix)))
+
+(defun company-lsp--candidates-async (prefix callback)
+  "Get completion candidates asynchronously.
+
+PREFIX is the prefix string for completion.
+CALLBACK is a function that takes a list of strings as completion candidates."
+  (let ((req (lsp--make-request "textDocument/completion"
+                                (lsp--text-document-position-params))))
+    (lsp--send-request-async req
+                             (lambda (resp)
+                               (funcall callback (company-lsp--on-completion resp prefix))))))
+
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
   "Define a company backend for lsp-mode.
@@ -305,22 +328,18 @@ See the documentation of `company-backends' for COMMAND and ARG."
              (lsp--capability "completionProvider")
              (or (company-lsp--completion-prefix) 'stop)))
     (candidates
-     (cons :async
-           #'(lambda (callback)
-               (let ((cache (company-lsp--cache-get arg)))
-                 (if cache
-                     (funcall callback (plist-get cache :candidates))
-                   (let ((req (lsp--make-request "textDocument/completion"
-                                                 (lsp--text-document-position-params))))
-                     (setq company-lsp--line-backup
-                           (buffer-substring (line-beginning-position) (line-end-position)))
-                     (if company-lsp-async
-                         (lsp--send-request-async req
-                                                  (lambda (resp)
-                                                    (company-lsp--on-completion resp arg callback)))
-                       (company-lsp--on-completion (lsp--send-request req)
-                                                   arg
-                                                   callback))))))))
+     ;; If the completion items in the response have textEdit action populated,
+     ;; we'll apply them in `company-lsp--post-completion'. However, textEdit
+     ;; actions only apply to the pre-completion content. We backup the current
+     ;; line and restore it after company completion is done, so the content
+     ;; is restored and textEdit actions can be applied.
+     (setq company-lsp--line-backup
+           (buffer-substring (line-beginning-position) (line-end-position)))
+     (or (plist-get (company-lsp--cache-get arg) :candidates)
+         (and company-lsp-async
+              (cons :async (lambda (callback)
+                             (company-lsp--candidates-async arg callback))))
+         (company-lsp--candidates-sync arg)))
     (sorted t)
     (no-cache (if (eq company-lsp-cache-candidates 'auto)
                   (let ((cache (company-lsp--cache-get arg)))
