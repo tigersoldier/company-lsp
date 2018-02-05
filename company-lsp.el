@@ -65,6 +65,17 @@ item with the snippet and use yas-snippet to expand it."
   :type 'boolean
   :group 'company-lsp)
 
+(defcustom company-lsp-enable-recompletion nil
+  "Whether or not to re-trigger completion for trigger characters.
+
+If set to non-nil, when company-lsp finishes completion, it checks if
+the current point is before any completion trigger characters. If yes,
+it re-triggers another completion request.
+
+This is useful in cases such as 'std' is completed as 'std::' in C++."
+  :type 'boolean
+  :group 'company-lsp)
+
 (declare-function yas-expand-snippet "ext:yasnippet.el")
 
 (defvar company-lsp--snippet-functions '(("rust" . company-lsp--rust-completion-snippet))
@@ -189,6 +200,14 @@ Return a string of the snippet to expand, or nil if no snippet is available."
                (fn (cdr fn-cons)))
     (funcall fn item)))
 
+(defun company-lsp--looking-back-trigger-characters-p ()
+  "Return non-nil if text before point matches any of the trigger characters."
+  (let ((trigger-chars (company-lsp--trigger-characters)))
+    (cl-some (lambda (trigger-char)
+               (equal (buffer-substring-no-properties (- (point) (length trigger-char)) (point))
+                      trigger-char))
+             trigger-chars)))
+
 (defun company-lsp--post-completion (candidate)
   "Replace a CompletionItem's label with its insertText. Apply text edits.
 
@@ -204,8 +223,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          ;; 1 = plaintext, 2 = snippet
          (insert-text-format (gethash "insertTextFormat" item))
          (text-edit (gethash "textEdit" item))
-         (additional-text-edits (gethash "additionalTextEdits" item))
-         (point-before-post-complete (point)))
+         (additional-text-edits (gethash "additionalTextEdits" item)))
     (cond
      (text-edit
       (goto-char (line-beginning-position))
@@ -241,7 +259,8 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     ;;         ...
     ;;
     ;; See https://github.com/company-mode/company-mode/issues/143
-    (unless (eq (point) point-before-post-complete)
+    (when (and company-lsp-enable-recompletion
+               (company-lsp--looking-back-trigger-characters-p))
       (setq this-command 'self-insert-command))))
 
 (defun company-lsp--on-completion (response prefix)

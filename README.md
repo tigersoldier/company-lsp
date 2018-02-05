@@ -41,6 +41,11 @@ After installing company-lsp, simply add `company-lsp` to `company-backends`:
     asynchronously.
  * `company-lsp-enable-snippet`: Set it to non-nil if you want to enable snippet
     expansion on completion. Set it to nil to disable this feature.
+ * `company-lsp-enable-recompletion`: If set to non-nil, when company-lsp
+    finishes completion, it checks if the current point is before any completion
+    trigger characters. If yes, it re-triggers another completion request.
+
+    This is useful in cases such as `std` is completed as `std::` in C++."
     
 ## Defining completion snippet for a certain language
 
