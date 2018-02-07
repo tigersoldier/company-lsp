@@ -94,7 +94,7 @@ This is useful in cases such as 'std' is completed as 'std::' in C++."
   "Cached completion. It's an alist of (prefix . completion).
 
 PREFIX is the prefix string.
-COMPLETION is a plist of (:candidates :incomplete).")
+COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
 
 (defvar-local company-lsp--line-backup nil
   "A copy of current line before modified by company-mode.")
@@ -289,9 +289,7 @@ Return a list of strings as the completion candidates."
     (when (eq company-lsp-cache-candidates 'auto)
       ;; Only cache candidates on auto mode. If it's t company caches the
       ;; candidates for us.
-      (company-lsp--cache-put
-         prefix
-         `(:incomplete ,incomplete :candidates ,candidates)))
+      (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))
     candidates))
 
 (defun company-lsp--cleanup-cache (_)
@@ -303,8 +301,7 @@ Return a list of strings as the completion candidates."
 (defun company-lsp--cache-put (prefix candidates)
   "Set cache for PREFIX to be CANDIDATES.
 
-CANDIDATES is a plist of (:incomplete :candidates). :incomplete is
-either t or nil. :candidates is a list of strings."
+CANDIDATES is a cache item created by `company-lsp--cache-item-new'."
   (setq company-lsp--completion-cache
         (cons (cons prefix candidates)
               company-lsp--completion-cache)))
@@ -312,8 +309,7 @@ either t or nil. :candidates is a list of strings."
 (defun company-lsp--cache-get (prefix)
   "Get the cached completion for PREFIX.
 
-Return a plist of (:incomplete :candidates) if cache for PREFIX
-exists. Otherwise return nil."
+Return a cache item if cache for PREFIX exists. Otherwise return nil."
   (let ((cache (cdr (assoc prefix company-lsp--completion-cache)))
         (len (length prefix))
         previous-cache)
@@ -323,14 +319,30 @@ exists. Otherwise return nil."
         (when (setq previous-cache
                     (cdr (assoc (substring prefix 0 (- len i 1))
                                 company-lsp--completion-cache)))
-          (if (company-lsp--cache-incomplete-p previous-cache)
+          (if (company-lsp--cache-item-incomplete-p previous-cache)
               (cl-return nil)
-            (company-lsp--cache-put prefix previous-cache)
-            (cl-return previous-cache)))))))
+            ;; TODO: Allow customizing matching functions to support fuzzy matching.
+            ;; Consider supporting company-flx out of box.
+            (let* ((previous-candidates (company-lsp--cache-item-candidates previous-cache))
+                   (new-candidates (all-completions prefix previous-candidates))
+                   (new-cache (company-lsp--cache-item-new new-candidates nil)))
+              (company-lsp--cache-put prefix new-cache)
+              (cl-return new-cache))))))))
 
-(defun company-lsp--cache-incomplete-p (cache-item)
+(defun company-lsp--cache-item-new (candidates incomplete)
+  "Create a new cache item.
+
+CANDIDATES: A list of strings. The completion candidates.
+INCOMPLETE: t or nil. Whether the candidates are incomplete or not."
+  (list :incomplete incomplete :candidates candidates))
+
+(defun company-lsp--cache-item-incomplete-p (cache-item)
   "Determine whether a CACHE-ITEM is incomplete."
   (plist-get cache-item :incomplete))
+
+(defun company-lsp--cache-item-candidates (cache-item)
+  "Get candidates from a CACHE-ITEM."
+  (plist-get cache-item :candidates))
 
 (defun company-lsp--documentation (candidate)
   "Get the documentation from the item in the CANDIDATE.
@@ -388,7 +400,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
      ;; is restored and textEdit actions can be applied.
      (setq company-lsp--line-backup
            (buffer-substring (line-beginning-position) (line-end-position)))
-     (or (plist-get (company-lsp--cache-get arg) :candidates)
+     (or (company-lsp--cache-item-candidates (company-lsp--cache-get arg))
          (and company-lsp-async
               (cons :async (lambda (callback)
                              (company-lsp--candidates-async arg callback))))
