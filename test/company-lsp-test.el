@@ -136,7 +136,7 @@
               :to-equal cache-item)))
 
   (it "Should return the cache item of sub-prefix if it's complete"
-    (let ((cache-item '(:incomplete nil ("foo" "bar"))))
+    (let ((cache-item (company-lsp--cache-item-new '("prefix1234" "prefix12345") nil)))
       (setq company-lsp--completion-cache nil)
       (expect (company-lsp--cache-get "prefix1234")
               :to-equal nil)
@@ -157,6 +157,15 @@
       (company-lsp--cache-put "prefix123" cache-item)
       (expect (company-lsp--cache-get "prefix1234")
               :to-equal cache-item)))
+
+  (it "Should filter cache items of sub-prefix"
+    (let ((cache-item (company-lsp--cache-item-new
+                       '("prefix" "prefix123" "prefix1234" "prefix12345")
+                       nil)))
+      (company-lsp--cache-put "prefix" cache-item)
+      (expect (company-lsp--cache-get "prefix1234")
+              :to-equal
+              (company-lsp--cache-item-new '("prefix1234" "prefix12345") nil))))
 
   (it "Should not return the cache item of sub-prefix if it's incomplete"
     (let ((company-lsp--completion-cache nil)
