@@ -59,7 +59,7 @@ sorting/matching provided by the server is critical."
                  (const :tag "Never cache" nil))
   :group 'company-lsp)
 
-(defcustom company-lsp-async nil
+(defcustom company-lsp-async t
   "Whether or not to use async operations to fetch data."
   :type 'boolean
   :group 'company-lsp)
