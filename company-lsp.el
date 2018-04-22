@@ -409,6 +409,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (no-cache (not (eq company-lsp-cache-candidates t)))
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
+    (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
     (match (length arg))
     (post-completion (company-lsp--post-completion arg))))
 
