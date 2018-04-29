@@ -99,6 +99,9 @@ COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
 (defvar-local company-lsp--line-backup nil
   "A copy of current line before modified by company-mode.")
 
+(defvar-local company-lsp--pre-completion-point nil
+  "The point before company inserts completion text.")
+
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
   (let ((provider (lsp--capability "completionProvider")))
@@ -231,29 +234,54 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
          (insert-text (gethash "insertText" item))
          ;; 1 = plaintext, 2 = snippet
          (insert-text-format (gethash "insertTextFormat" item))
+         (is-snippet (eq insert-text-format 2))
          (text-edit (gethash "textEdit" item))
-         (additional-text-edits (gethash "additionalTextEdits" item)))
+         (additional-text-edits (gethash "additionalTextEdits" item))
+         (support-snippet (and company-lsp-enable-snippet (fboundp 'yas-expand-snippet)))
+         insert-start insert-end)
     (cond
      (text-edit
-      (goto-char (line-beginning-position))
-      (delete-char (- (line-end-position) (line-beginning-position)))
-      (insert company-lsp--line-backup)
+      ;; Text-edit applies to the text at the state when the candidates are
+      ;; fetched. We need to revert completion done by company.
+      ;;
+      ;; Try deleting the range between pre-completion marker and point. This
+      ;; won't destroy yasnippet fields if we are completing in a snippet field.
+      (delete-region company-lsp--pre-completion-point (point))
+      (when (not (equal (buffer-substring-no-properties
+                       (point-at-bol) (point-at-eol))
+                      company-lsp--line-backup))
+        ;; The deletion above is not enough. It's likely company changed the
+        ;; completion prefix. Restore the whole line.
+        (goto-char (line-beginning-position))
+        (delete-char (- (line-end-position) (line-beginning-position)))
+        (insert company-lsp--line-backup))
       (lsp--apply-text-edit text-edit)
       (let* ((range (gethash "range" text-edit))
              (start-point (lsp--position-to-point (gethash "start" range)))
-             (new-text-length (length (gethash "newText" text-edit))))
-        (goto-char (+ start-point new-text-length))))
-     ((and insert-text (not (eq insert-text-format 2)))
+             (new-text-length (length (gethash "newText" text-edit)))
+             (end-point (+ start-point new-text-length)))
+        (goto-char end-point)
+        (when (and support-snippet is-snippet)
+          (setq insert-start (copy-marker start-point)
+                insert-end (point-marker)))))
+     (insert-text
       (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
       (delete-char (length label))
-      (insert insert-text)))
+      (insert insert-text)
+      (when (and support-snippet is-snippet)
+        (setq insert-start (copy-marker start)
+              insert-end (point-marker)))))
     (when additional-text-edits
       (lsp--apply-text-edits additional-text-edits))
-    (when (and company-lsp-enable-snippet
-               (fboundp 'yas-expand-snippet))
-      (if (and insert-text (eq insert-text-format 2))
-          (yas-expand-snippet insert-text start (point))
+    (when support-snippet
+      (if (and is-snippet insert-start insert-end)
+          (progn
+            (yas-expand-snippet (buffer-substring-no-properties
+                                 insert-start insert-end)
+                                insert-start insert-end)
+            (set-marker insert-start nil)
+            (set-marker insert-end nil))
         (-when-let (fallback-snippet (company-lsp--fallback-snippet item))
           (yas-expand-snippet fallback-snippet))))
     ;; Here we set this-command to a `self-insert-command'
@@ -399,7 +427,8 @@ See the documentation of `company-backends' for COMMAND and ARG."
      ;; line and restore it after company completion is done, so the content
      ;; is restored and textEdit actions can be applied.
      (setq company-lsp--line-backup
-           (buffer-substring (line-beginning-position) (line-end-position)))
+           (buffer-substring (line-beginning-position) (line-end-position))
+           company-lsp--pre-completion-point (point))
      (or (company-lsp--cache-item-candidates (company-lsp--cache-get arg))
          (and company-lsp-async
               (cons :async (lambda (callback)
