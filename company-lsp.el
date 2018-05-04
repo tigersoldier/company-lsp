@@ -104,8 +104,8 @@ COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
   (let ((provider (lsp--capability "completionProvider")))
     (and provider (gethash "triggerCharacters" provider))))
 
-(defun company-lsp--completion-prefix ()
-  "Return the completion prefix.
+(defun company-lsp--default-completion-prefix ()
+  "Default prefix function.
 
 Return value is compatible with the `prefix' command of a company backend.
 
@@ -134,6 +134,24 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
                 (cons (substring symbol (length trigger-char)) t)
               symbol-cons)))
       (company-grab-symbol))))
+
+(defun company-lsp--completion-prefix ()
+  "Return the completion prefix.
+
+If the client has custom prefix function, use it. Otherwise use
+`company-lsp--default-completion-prefix'.
+
+Return value is compatible with the `prefix' command of a company backend.
+"
+  (let ((prefix-function (lsp--client-prefix-function (lsp--workspace-client lsp--cur-workspace)))
+        prefix)
+    (when prefix-function
+      (let ((bounds (funcall prefix-function)))
+        (when bounds
+          (setq prefix (buffer-substring (car bounds) (cdr bounds))))))
+    (unless prefix
+      (setq prefix (company-lsp--default-completion-prefix)))
+    prefix))
 
 (defun company-lsp--make-candidate (item)
   "Convert a CompletionItem JSON data to a string.
