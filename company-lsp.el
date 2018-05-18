@@ -136,12 +136,13 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
   "Convert a CompletionItem JSON data to a string.
 
 ITEM is a hashtable representing the CompletionItem interface.
+PREFIX is the currently active prefix.
 
 The returned string has a lsp-completion-item property with the
 value of ITEM."
   ;; The property has to be the same as added by `lsp--make-completion-item' so
   ;; that `lsp--annotate' can use it.
-  (propertize (gethash "label" item) 'lsp-completion-item item 'prefix prefix))
+  (propertize (gethash "label" item) 'lsp-completion-item item 'lsp-completion-prefix prefix))
 
 (defun company-lsp--candidate-item (candidate)
   "Retrieve the CompletionItem hashtable associated with CANDIDATE.
@@ -153,7 +154,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
   "Retrieves the prefix that was active during creation of the candidate.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (plist-get (text-properties-at 0 candidate) 'prefix))
+  (plist-get (text-properties-at 0 candidate) 'lsp-completion-prefix))
 
 (defun company-lsp--resolve-candidate (candidate &rest props)
   "Resolve a completion candidate to fill some properties.
@@ -288,8 +289,8 @@ Return a list of strings as the completion candidates."
   (let* ((incomplete (and (hash-table-p response) (gethash "isIncomplete" response)))
          (items (cond ((hash-table-p response) (gethash "items" response))
                       ((sequencep response) response)))
-         (candidates (mapcar (lambda (it)
-                               (company-lsp--make-candidate it prefix))
+         (candidates (mapcar (lambda (item)
+                               (company-lsp--make-candidate item prefix))
                              (lsp--sort-completions items))))
     (when (null company-lsp--completion-cache)
       (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache)
