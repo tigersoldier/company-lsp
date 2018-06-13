@@ -400,6 +400,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (prefix (and
              (bound-and-true-p lsp-mode)
              (lsp--capability "completionProvider")
+             (not (company-in-string-or-comment))
              (or (company-lsp--completion-prefix) 'stop)))
     (candidates
      ;; If the completion items in the response have textEdit action populated,
