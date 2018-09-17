@@ -260,7 +260,8 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
       (when (and company-lsp-enable-snippet
                  (fboundp 'yas-expand-snippet))
         (if (and insert-text (eq insert-text-format 2))
-            (yas-expand-snippet insert-text (marker-position start-marker) (point))
+            (yas-expand-snippet (company-lsp--to-yasnippet-snippet insert-text)
+                                (marker-position start-marker) (point))
           (-when-let (fallback-snippet (company-lsp--fallback-snippet item))
             (yas-expand-snippet fallback-snippet))))
       (set-marker start-marker nil))
@@ -279,6 +280,23 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (when (and company-lsp-enable-recompletion
                (company-lsp--looking-back-trigger-characters-p))
       (setq this-command 'self-insert-command))))
+
+(defun company-lsp--to-yasnippet-snippet (text)
+  "Convert VS code snippet TEXT to yasnippet snippet."
+  ;; VS code snippet doesn't esscape "{", but yasnippet requires escaping it.
+  (let (parts
+        (start 0))
+    (dolist (range (s-matched-positions-all (regexp-quote "{") text))
+      (let ((match-start (car range)))
+        (unless (and (> match-start 0) (= (aref text (1- match-start)) ?$))
+          ;; Not a start of field. Escape it.
+          (when (< start match-start)
+            (push (substring text start match-start) parts))
+          (push "\\{" parts)
+          (setq start (1+ match-start)))))
+    (when (< start (length text))
+      (push (substring text start) parts))
+    (apply #'concat (reverse parts))))
 
 (defun company-lsp--on-completion (response prefix)
   "Handle completion RESPONSE.

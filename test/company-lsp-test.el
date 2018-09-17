@@ -174,4 +174,15 @@
       (expect (company-lsp--cache-get "prefix1234")
               :to-equal nil))))
 
+(describe "company-lsp--to-yasnippet-snippet"
+  (it "Should return the same simple snippet"
+    (expect (company-lsp--to-yasnippet-snippet "foo")
+            :to-equal "foo"))
 
+  (it "Should return the same snippet with fields"
+    (expect (company-lsp--to-yasnippet-snippet "foo(${1:bar}, ${2:baz})")
+            :to-equal "foo(${1:bar}, ${2:baz})"))
+
+  (it "Should escape opening brackets that are not field start"
+    (expect (company-lsp--to-yasnippet-snippet "foo(${1:{{${2:}{bar})")
+            :to-equal "foo(${1:\\{\\{${2:}\\{bar})")))
