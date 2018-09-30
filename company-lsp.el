@@ -31,6 +31,7 @@
 (require 'company)
 (require 'lsp-mode)
 (require 's)
+(require 'seq)
 (require 'dash)
 
 (defgroup company-lsp nil
@@ -99,7 +100,7 @@ COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
   (let ((provider (lsp--capability "completionProvider")))
-    (and provider (gethash "triggerCharacters" provider))))
+    (and provider (seq-into (gethash "triggerCharacters" provider) 'list))))
 
 (defun company-lsp--completion-prefix ()
   "Return the completion prefix.
@@ -256,7 +257,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
 
     (let ((start-marker (set-marker (make-marker) start)))
       (when additional-text-edits
-        (lsp--apply-text-edits additional-text-edits))
+        (lsp--apply-text-edits (seq-into additional-text-edits 'list)))
       (when (and company-lsp-enable-snippet
                  (fboundp 'yas-expand-snippet))
         (if (and insert-text (eq insert-text-format 2))
@@ -309,7 +310,7 @@ Return a list of strings as the completion candidates."
                       ((sequencep response) response)))
          (candidates (mapcar (lambda (item)
                                (company-lsp--make-candidate item prefix))
-                             (lsp--sort-completions items))))
+                             (lsp--sort-completions (seq-into items 'list)))))
     (when (null company-lsp--completion-cache)
       (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache)
       (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache))
