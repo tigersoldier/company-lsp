@@ -407,6 +407,41 @@ CALLBACK is a function that takes a list of strings as completion candidates."
                              (lambda (resp)
                                (funcall callback (company-lsp--on-completion resp prefix))))))
 
+(defun company-lsp--compute-match (candidate)
+  "Compute the matched parts of CANDIDATE.
+
+CANDIDATE is a string of the candidate label.
+
+Return an alist of (CHUNK-START . CHUNK-END), representing parts
+within CANDIDATE that matches the current prefix. See the
+\"match\" section of `company-backends' for more info."
+  (let* ((prefix (company-lsp--completion-prefix))
+         (prefix-str (downcase (if (consp prefix) (car prefix)
+                                 prefix)))
+         (prefix-pos 0)
+         (prefix-len (length prefix-str))
+         (candidate-pos 0)
+         (candidate-len (length candidate))
+         (candidate-str (downcase candidate))
+         chunks
+         chunk-start)
+    (while (and (< prefix-pos prefix-len)
+                (< candidate-pos candidate-len))
+      (if (= (aref prefix-str prefix-pos)
+             (aref candidate-str candidate-pos))
+          (progn
+            (when (not chunk-start)
+              (setq chunk-start candidate-pos))
+            (incf prefix-pos)
+            (incf candidate-pos))
+        (when chunk-start
+          (push (cons chunk-start candidate-pos) chunks)
+          (setq chunk-start nil))
+        (incf candidate-pos)))
+    (when chunk-start
+      (push (cons chunk-start candidate-pos) chunks))
+    (nreverse chunks)))
+
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
   "Define a company backend for lsp-mode.
@@ -436,7 +471,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
-    (match (length arg))
+    (match (company-lsp--compute-match arg))
     (post-completion (company-lsp--post-completion arg))))
 
 (defun company-lsp--client-capabilities ()
