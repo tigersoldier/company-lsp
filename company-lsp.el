@@ -430,12 +430,12 @@ within CANDIDATE that matches the current prefix. See the
           (progn
             (when (not chunk-start)
               (setq chunk-start candidate-pos))
-            (incf prefix-pos)
-            (incf candidate-pos))
+            (cl-incf prefix-pos)
+            (cl-incf candidate-pos))
         (when chunk-start
           (push (cons chunk-start candidate-pos) chunks)
           (setq chunk-start nil))
-        (incf candidate-pos)))
+        (cl-incf candidate-pos)))
     (when chunk-start
       (push (cons chunk-start candidate-pos) chunks))
     (nreverse chunks)))
