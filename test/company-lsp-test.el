@@ -34,9 +34,7 @@
     (setq item (make-hash-table :test 'equal))
     (puthash "detail" "some-detail" item)
     (puthash "label" "some-label" item)
-    (setq lsp--cur-workspace
-          (make-lsp--workspace
-           :client (make-lsp--client :language-id (lambda (_) language-id)))))
+    (spy-on 'lsp-buffer-language :and-call-fake (lambda () language-id)))
 
   (it "Calls the snippet function for test language ID"
     (setq language-id "test")
