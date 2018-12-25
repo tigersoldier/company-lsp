@@ -75,7 +75,7 @@ item with the snippet and use yas-snippet to expand it."
   :type 'boolean
   :group 'company-lsp)
 
-(defcustom company-lsp-enable-recompletion nil
+(defcustom company-lsp-enable-recompletion t
   "Whether or not to re-trigger completion for trigger characters.
 
 If set to non-nil, when company-lsp finishes completion, it checks if
