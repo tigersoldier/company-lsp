@@ -309,8 +309,8 @@ Return a list of strings as the completion candidates."
                                (company-lsp--make-candidate item prefix))
                              (lsp--sort-completions items))))
     (when (null company-lsp--completion-cache)
-      (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache)
-      (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache))
+      (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
+      (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
     (when (eq company-lsp-cache-candidates 'auto)
       ;; Only cache candidates on auto mode. If it's t company caches the
       ;; candidates for us.
@@ -320,8 +320,8 @@ Return a list of strings as the completion candidates."
 (defun company-lsp--cleanup-cache (_)
   "Clean up completion cache and company hooks."
   (setq company-lsp--completion-cache nil)
-  (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache)
-  (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache))
+  (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache t)
+  (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache t))
 
 (defun company-lsp--cache-put (prefix candidates)
   "Set cache for PREFIX to be CANDIDATES.
