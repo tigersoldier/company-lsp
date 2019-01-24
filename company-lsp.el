@@ -223,6 +223,10 @@ Return a string of the snippet to expand, or nil if no snippet is available."
   "Replace a CompletionItem's label with its insertText. Apply text edits.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
+  ;; Clean up completion cache if any. In theory this function should be called automatically
+  ;; because we add it to `company-completion-finished-hook'. However we have seen cases that
+  ;; the function is removed from the hooks with the cache still not cleared.
+  (company-lsp--cleanup-cache nil)
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate
                                                              "insertText"
                                                              "textEdit"
