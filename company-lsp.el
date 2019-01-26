@@ -39,7 +39,7 @@
   :prefix "company-lsp-"
   :group 'tools)
 
-(defcustom company-lsp-cache-candidates 'auto
+(defcustom company-lsp-cache-candidates nil
   "Whether or not to cache completion candidates.
 
 When set to 'auto, company-lsp caches the completion. It sends
