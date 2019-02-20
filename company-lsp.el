@@ -102,6 +102,10 @@ COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
   (let ((provider (lsp--capability "completionProvider")))
     (and provider (seq-into (gethash "triggerCharacters" provider) 'list))))
 
+(defun company-lsp--prefix-line ()
+  "Return the string from bol to point."
+  (buffer-substring (point-at-bol) (point)))
+
 (defun company-lsp--completion-prefix ()
   "Return the completion prefix.
 
@@ -132,17 +136,17 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
             symbol-cons)))
     (company-grab-symbol)))
 
-(defun company-lsp--make-candidate (item prefix)
+(defun company-lsp--make-candidate (item prefix-line)
   "Convert a CompletionItem JSON data to a string.
 
 ITEM is a hashtable representing the CompletionItem interface.
-PREFIX is the currently active prefix.
+PREFIX-LINE is the currently active prefix line.
 
 The returned string has a lsp-completion-item property with the
 value of ITEM."
   ;; The property has to be the same as added by `lsp--make-completion-item' so
   ;; that `lsp--annotate' can use it.
-  (propertize (gethash "label" item) 'lsp-completion-item item 'lsp-completion-prefix prefix))
+  (propertize (gethash "label" item) 'lsp-completion-item item 'lsp-completion-prefix-line prefix-line))
 
 (defun company-lsp--candidate-item (candidate)
   "Retrieve the CompletionItem hashtable associated with CANDIDATE.
@@ -150,11 +154,11 @@ value of ITEM."
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
   (plist-get (text-properties-at 0 candidate) 'lsp-completion-item))
 
-(defun company-lsp--candidate-prefix (candidate)
+(defun company-lsp--candidate-prefix-line (candidate)
   "Retrieves the prefix that was active during creation of the candidate.
 
 CANDIDATE is a string returned by `company-lsp--make-candidate'."
-  (plist-get (text-properties-at 0 candidate) 'lsp-completion-prefix))
+  (plist-get (text-properties-at 0 candidate) 'lsp-completion-prefix-line))
 
 (defun company-lsp--resolve-candidate (candidate &rest props)
   "Resolve a completion candidate to fill some properties.
@@ -228,9 +232,8 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
                                                              "textEdit"
                                                              "additionalTextEdits"))
          (item (company-lsp--candidate-item resolved-candidate))
-         (prefix (company-lsp--candidate-prefix candidate))
+         (prefix-line (company-lsp--candidate-prefix-line candidate))
          (label (gethash "label" item))
-         (start (- (point) (length label)))
          (insert-text (gethash "insertText" item))
          ;; 1 = plaintext, 2 = snippet
          (insert-text-format (gethash "insertTextFormat" item))
@@ -239,20 +242,21 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
     (cond
      (text-edit
       (setq insert-text (gethash "newText" text-edit))
-      (delete-region (- (point) (length candidate)) (point))
-      (insert prefix)
+      (delete-region (point-at-bol) (point))
+      (insert prefix-line)
       (let* ((range (gethash "range" text-edit))
              (start-point (lsp--position-to-point (gethash "start" range)))
              (new-text-length (length insert-text)))
         (lsp--apply-text-edit text-edit)
         (goto-char (+ start-point new-text-length))))
      ((and insert-text (not (eq insert-text-format 2)))
-      (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
-      (goto-char start)
+      (cl-assert (string-equal (buffer-substring-no-properties
+                                (- (point) (length label)) (point)) label))
+      (goto-char (- (point) (length label)))
       (delete-char (length label))
       (insert insert-text)))
 
-    (let ((start-marker (set-marker (make-marker) start)))
+    (let ((start-marker (set-marker (make-marker) (- (point) (length insert-text)))))
       (when additional-text-edits
         (lsp--apply-text-edits additional-text-edits))
       (when (and company-lsp-enable-snippet
@@ -323,35 +327,35 @@ Return a list of strings as the completion candidates."
   (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache t)
   (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache t))
 
-(defun company-lsp--cache-put (prefix candidates)
-  "Set cache for PREFIX to be CANDIDATES.
+(defun company-lsp--cache-put (prefix-line candidates)
+  "Set cache for PREFIX-LINE to be CANDIDATES.
 
 CANDIDATES is a cache item created by `company-lsp--cache-item-new'."
   (setq company-lsp--completion-cache
-        (cons (cons prefix candidates)
+        (cons (cons prefix-line candidates)
               company-lsp--completion-cache)))
 
-(defun company-lsp--cache-get (prefix)
-  "Get the cached completion for PREFIX.
+(defun company-lsp--cache-get (prefix-line)
+  "Get the cached completion for PREFIX-LINE.
 
-Return a cache item if cache for PREFIX exists. Otherwise return nil."
-  (let ((cache (cdr (assoc prefix company-lsp--completion-cache)))
-        (len (length prefix))
+Return a cache item if cache for PREFIX-LINE exists. Otherwise return nil."
+  (let ((cache (cdr (assoc prefix-line company-lsp--completion-cache)))
+        (len (length prefix-line))
         previous-cache)
     (if cache
         cache
       (cl-dotimes (i len)
         (when (setq previous-cache
-                    (cdr (assoc (substring prefix 0 (- len i 1))
+                    (cdr (assoc (substring prefix-line 0 (- len i 1))
                                 company-lsp--completion-cache)))
           (if (company-lsp--cache-item-incomplete-p previous-cache)
               (cl-return nil)
             ;; TODO: Allow customizing matching functions to support fuzzy matching.
             ;; Consider supporting company-flx out of box.
             (let* ((previous-candidates (company-lsp--cache-item-candidates previous-cache))
-                   (new-candidates (all-completions prefix previous-candidates))
+                   (new-candidates (all-completions prefix-line previous-candidates))
                    (new-cache (company-lsp--cache-item-new new-candidates nil)))
-              (company-lsp--cache-put prefix new-cache)
+              (company-lsp--cache-put prefix-line new-cache)
               (cl-return new-cache))))))))
 
 (defun company-lsp--cache-item-new (candidates incomplete)
@@ -459,11 +463,11 @@ See the documentation of `company-backends' for COMMAND and ARG."
      ;; actions only apply to the pre-completion content. We backup the current
      ;; prefix and restore it after company completion is done, so the content
      ;; is restored and textEdit actions can be applied.
-     (or (company-lsp--cache-item-candidates (company-lsp--cache-get arg))
+     (or (company-lsp--cache-item-candidates (company-lsp--cache-get (company-lsp--prefix-line)))
          (and company-lsp-async
               (cons :async (lambda (callback)
-                             (company-lsp--candidates-async arg callback))))
-         (company-lsp--candidates-sync arg)))
+                             (company-lsp--candidates-async (company-lsp--prefix-line) callback))))
+         (company-lsp--candidates-sync (company-lsp--prefix-line))))
     (sorted t)
     (no-cache (not (eq company-lsp-cache-candidates t)))
     (annotation (lsp--annotate arg))
