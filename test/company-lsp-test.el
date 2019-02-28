@@ -184,3 +184,27 @@
   (it "Should escape opening brackets that are not field start"
     (expect (company-lsp--to-yasnippet-snippet "foo(${1:{{${2:}{bar})")
             :to-equal "foo(${1:\\{\\{${2:}\\{bar})")))
+
+(describe "company-lsp--get-config"
+  (it "Should return server config if present"
+    (expect (company-lsp--get-config '((foo . nil) (bar . "bar") (t . "none"))
+                                     'foo)
+            :to-equal nil)
+    (expect (company-lsp--get-config '((foo . nil) (bar . "bar") (t . "none"))
+                                     'bar)
+            :to-equal "bar"))
+
+  (it "Should return fallback config if server is not present"
+    (expect (company-lsp--get-config '((foo . "foo") (t . "none"))
+                                     'bar)
+            :to-equal "none"))
+
+  (it "Should return nil if server is not present and fallback is not present"
+    (expect (company-lsp--get-config '((foo . "foo"))
+                                     'bar)
+            :to-equal nil))
+
+  (it "Should return the config if it's not a list"
+    (expect (company-lsp--get-config "bar" 'foo) :to-equal "bar")
+    (expect (company-lsp--get-config t 'foo) :to-equal t)
+    (expect (company-lsp--get-config nil 'foo) :to-equal nil)))

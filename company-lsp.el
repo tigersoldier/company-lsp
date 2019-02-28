@@ -49,15 +49,51 @@ sorted or filtered as the server would for cached completion
 results.
 
 When set to t, company-mode caches the completion. It won't send
-incremental completion requests to the server.
+incremental completion requests to the server. Candidates are
+filtered on client side.
 
-When set to nil, results are not cached at all. The candidates
-are always sorted and filtered by the server. Use this option if
+When set to nil, results are not cached at all. Each incremental
+completion will send requests to the server. Use this option if
 the server handles caching for incremental completion or
-sorting/matching provided by the server is critical."
+sorting/matching provided by the server is critical. If
+`company-lsp-filter-candidates' is non-nil for the language
+server, returned candidates are filtered by company-lsp.
+Otherwise candidates are not filtered."
   :type '(choice (const :tag "Respect server response" auto)
                  (const :tag "Always cache" t)
                  (const :tag "Never cache" nil))
+  :group 'company-lsp)
+
+(defcustom company-lsp-filter-candidates '((bingo . nil)
+                                           (ccls . nil)
+                                           (cquery . nil)
+                                           (javacomp . nil)
+                                           (jdtls . nil)
+                                           (pyls . nil)
+                                           (rls . nil)
+                                           (t . t))
+  "Whether or not to filter completion candidates returned by server.
+
+Some servers return unfiltered candidates while others do
+server-side filtering. This option controls whether or not to
+filter candidates on client-side when
+`company-lsp-cache-candidates' is nil for the current server. This
+option doesn't change the filtering behavior when
+`company-lsp-cache-candidates' is set to auto or t.
+
+Value can be t, nil, or an alist. When set
+to t, always filter candidates regardless of the current language
+server. When set to candidates are never filtered.
+
+When set to an alist, the key is either a symbol of the server-id
+defined by the LSP client for the server, or t that matches other
+servers. The value is a boolean."
+  :type '(choice (const :tag "Always filter" t)
+                 (const :tag "Never filter" nil)
+                 (alist :tag "Depends on language server"
+                        :key-type (choice (const :tag "Other servers" t)
+                                          (symbol :tag "Server ID"))
+                        :value-type boolean))
   :group 'company-lsp)
 
 (defcustom company-lsp-async t
@@ -87,6 +123,21 @@ This is useful in cases such as 'std' is completed as 'std::' in C++."
   :group 'company-lsp)
 
 (declare-function yas-expand-snippet "ext:yasnippet.el")
+
+(defun company-lsp--get-config (config server-id)
+  "Get the CONFIG value for SERVER-ID.
+
+If CONFIG is a list in the form of (server-id . value), return
+the value of key SERVER-ID. When there is no value of key
+SERVER-ID, return the value of key t if it's present, or return
+nil otherwise.
+
+If CONFIG is not a list, return it directly."
+  (if (listp config)
+      (if-let (server-config (assq server-id config))
+          (cdr server-config)
+        (alist-get t config))
+    config))
 
 (defvar company-lsp--snippet-functions '(("rust" . company-lsp--rust-completion-snippet))
   "Alist of functions to insert our snippets for each language.")
@@ -315,7 +366,11 @@ Return a list of strings as the completion candidates."
                       ((sequencep response) response)))
          (candidates (mapcar (lambda (item)
                                (company-lsp--make-candidate item prefix))
-                             (lsp--sort-completions items))))
+                             (lsp--sort-completions items)))
+         (server-id (lsp--client-server-id (lsp--workspace-client lsp--cur-workspace)))
+         (should-filter (or (eq company-lsp-cache-candidates t)
+                            (and (null company-lsp-cache-candidates)
+                                 (company-lsp--get-config company-lsp-filter-candidates server-id)))))
     (when (null company-lsp--completion-cache)
       (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
       (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
@@ -323,7 +378,20 @@ Return a list of strings as the completion candidates."
       ;; Only cache candidates on auto mode. If it's t company caches the
       ;; candidates for us.
       (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))
-    candidates))
+    (if should-filter
+        (company-lsp--filter-candidates candidates prefix)
+      candidates)))
+
+(defun company-lsp--filter-candidates (candidates prefix)
+  "Filters CANDIDATES by PREFIX.
+
+CANDIDATES are a list of strings of candidate labels created by
+`company-lsp--make-candidate'.
+
+Returns a new list of candidates."
+  ;; TODO: Allow customizing matching functions to support fuzzy matching.
+  ;; Consider supporting company-flx out of box.
+  (all-completions prefix candidates))
 
 (defun company-lsp--cleanup-cache (_)
   "Clean up completion cache and company hooks."
@@ -354,10 +422,8 @@ Return a cache item if cache for PREFIX exists. Otherwise return nil."
                                 company-lsp--completion-cache)))
           (if (company-lsp--cache-item-incomplete-p previous-cache)
               (cl-return nil)
-            ;; TODO: Allow customizing matching functions to support fuzzy matching.
-            ;; Consider supporting company-flx out of box.
             (let* ((previous-candidates (company-lsp--cache-item-candidates previous-cache))
-                   (new-candidates (all-completions prefix previous-candidates))
+                   (new-candidates (company-lsp--filter-candidates previous-candidates prefix))
                    (new-cache (company-lsp--cache-item-new new-candidates nil)))
               (company-lsp--cache-put prefix new-cache)
               (cl-return new-cache))))))))
