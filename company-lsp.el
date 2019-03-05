@@ -148,6 +148,10 @@ If CONFIG is not a list, return it directly."
 PREFIX is the prefix string.
 COMPLETION is a cache-item created by `company-lsp--cache-item-new'.")
 
+(defvar-local company-lsp--last-request-id nil
+  "The last request ID for completion sent to the language
+  server. nil means no outstanding requests.")
+
 (defun company-lsp--trigger-characters ()
   "Return a list of completion trigger characters specified by server."
   (let ((provider (lsp--capability "completionProvider")))
@@ -399,6 +403,16 @@ Returns a new list of candidates."
   (remove-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache t)
   (remove-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache t))
 
+(defun company-lsp--cancel-outstanding-request ()
+  "Cancels outstanding completion requests.
+
+A cancel command with `company-lsp--last-request-id' will be sent
+to the server. `company-lsp--last-request-id' is reset to nil
+after cancellation."
+  (when company-lsp--last-request-id
+    (lsp--cancel-request company-lsp--last-request-id)
+    (setq company-lsp--last-request-id nil)))
+
 (defun company-lsp--cache-put (prefix candidates)
   "Set cache for PREFIX to be CANDIDATES.
 
@@ -474,10 +488,15 @@ Return a list of strings as completion candidates."
 PREFIX is the prefix string for completion.
 CALLBACK is a function that takes a list of strings as completion candidates."
   (let ((req (lsp--make-request "textDocument/completion"
-                                (lsp--text-document-position-params))))
-    (lsp--send-request-async req
-                             (lambda (resp)
-                               (funcall callback (company-lsp--on-completion resp prefix))))))
+                                (lsp--text-document-position-params)))
+        body)
+    (company-lsp--cancel-outstanding-request)
+    (setq body
+          (lsp--send-request-async req
+                                   (lambda (resp)
+                                     (setq company-lsp--last-request-id nil)
+                                     (funcall callback (company-lsp--on-completion resp prefix)))))
+    (setq company-lsp--last-request-id (plist-get body :id))))
 
 (defun company-lsp--compute-match (candidate)
   "Compute the matched parts of CANDIDATE.
