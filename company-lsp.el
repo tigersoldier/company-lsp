@@ -242,10 +242,18 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
       (delete-region (- (point) (length candidate)) (point))
       (insert prefix)
       (let* ((range (gethash "range" text-edit))
-             (start-point (lsp--position-to-point (gethash "start" range)))
              (new-text-length (length insert-text)))
+        ;; No that the text edit start may not be equal to prefix/label start.
+        ;; For example jdtls can insert "java.util.List" for "java.uti". The
+        ;; prefix start is before "uti", while the text edit start is before
+        ;; "java".
+        ;;
+        ;; We need to adjust `start' to be the text edit start, because the
+        ;; snippet expansion below will replace text between `start' and point
+        ;; with insert-text again.
+        (setq start (lsp--position-to-point (gethash "start" range)))
         (lsp--apply-text-edit text-edit)
-        (goto-char (+ start-point new-text-length))))
+        (goto-char (+ start new-text-length))))
      ((and insert-text (not (eq insert-text-format 2)))
       (cl-assert (string-equal (buffer-substring-no-properties start (point)) label))
       (goto-char start)
