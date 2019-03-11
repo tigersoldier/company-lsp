@@ -369,20 +369,25 @@ INCOMPLETE: t or nil. Whether the candidates are incomplete or not."
   "Get candidates from a CACHE-ITEM."
   (plist-get cache-item :candidates))
 
-(defun company-lsp--documentation (candidate)
+(defun company-lsp--documentation (candidate &optional only-markdown)
   "Get the documentation from the item in the CANDIDATE.
 
 The documentation can be either string or MarkupContent. This method
 will return markdown string if it is MarkupContent, original string
 otherwise. If the documentation is not present, it will return nil
-which company can handle."
+which company can handle.
+
+If ONLY-MARKDOWN is non-nil, it will return a documentation only if
+the string is a MarkupContent with `kind' set to `markdown'."
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate "documentation"))
          (item (company-lsp--candidate-item resolved-candidate))
          (documentation (gethash "documentation" item)))
-    (if
-        (hash-table-p documentation)  ;; If true, then the documentation is a MarkupContent. String otherwise.
-        (gethash "value" documentation)
-      documentation)))
+    (cond (only-markdown
+           (and (hash-table-p documentation)
+                (equal (gethash "kind" documentation) "markdown")
+                (gethash "value" documentation)))
+          ((hash-table-p documentation) (gethash "value" documentation))
+          (t documentation))))
 
 (defun company-lsp--candidates-sync (prefix)
   "Get completion candidates synchronously.
@@ -469,6 +474,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
+    (markdown-doc (company-lsp--documentation arg t))
     (match (company-lsp--compute-match arg))
     (post-completion (company-lsp--post-completion arg))))
 
