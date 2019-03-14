@@ -387,7 +387,7 @@ Return a list of strings as the completion candidates."
       candidates)))
 
 (defun company-lsp--filter-candidates (candidates prefix)
-  "Filters CANDIDATES by PREFIX.
+  "Filter CANDIDATES by PREFIX.
 
 CANDIDATES are a list of strings of candidate labels created by
 `company-lsp--make-candidate'.
@@ -395,7 +395,19 @@ CANDIDATES are a list of strings of candidate labels created by
 Returns a new list of candidates."
   ;; TODO: Allow customizing matching functions to support fuzzy matching.
   ;; Consider supporting company-flx out of box.
-  (all-completions prefix candidates))
+  (-filter (lambda (candidate)
+             (s-starts-with-p prefix (company-lsp--candidate-filter-text candidate) t))
+           candidates))
+
+(defun company-lsp--candidate-filter-text (candidate)
+  "Return filter string of CANDIDATE.
+
+CANDIDATE is a string created by `company-lsp--make-candidate'.
+If the CompletionItem of CANDIDATE has filterText field, return
+the value of filterText. Otherwise return CANDIDATE itself."
+  (let* ((candidate-item (company-lsp--candidate-item candidate))
+         (filter-text (gethash "filterText" candidate-item)))
+    (or filter-text candidate)))
 
 (defun company-lsp--cleanup-cache (_)
   "Clean up completion cache and company hooks."

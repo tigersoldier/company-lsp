@@ -26,6 +26,16 @@
 (defun company-lsp--test-snippet-function (item)
   (gethash "detail" item))
 
+(defun ensure-candidate-item (candidate)
+  (if (company-lsp--candidate-item candidate)
+      candidate
+    (let ((completion-item (make-hash-table :test 'equal)))
+      (puthash "label" (substring-no-properties candidate) completion-item)
+      (company-lsp--make-candidate completion-item ""))))
+
+(defun ensure-candidates-items (candidates)
+  (mapcar #'ensure-candidate-item candidates))
+
 (describe "company-lsp--fallback-snippet"
   :var (company-lsp--snippet-functions item language-id lsp--cur-workspace)
   (before-each
@@ -128,13 +138,15 @@
 (describe "Getting cache"
   (it "Should return the cache item if prefix matches"
     (let ((company-lsp--completion-cache nil)
-          (cache-item '(:incomplete nil ("foo" "bar"))))
+          (cache-item (company-lsp--cache-item-new (ensure-candidates-items '("foo" "bar"))
+                                                   nil)))
       (company-lsp--cache-put "prefix" cache-item)
       (expect (company-lsp--cache-get "prefix")
               :to-equal cache-item)))
 
   (it "Should return the cache item of sub-prefix if it's complete"
-    (let ((cache-item (company-lsp--cache-item-new '("prefix1234" "prefix12345") nil)))
+    (let ((cache-item (company-lsp--cache-item-new (ensure-candidates-items '("prefix1234" "prefix12345"))
+                                                   nil)))
       (setq company-lsp--completion-cache nil)
       (expect (company-lsp--cache-get "prefix1234")
               :to-equal nil)
@@ -158,7 +170,7 @@
 
   (it "Should filter cache items of sub-prefix"
     (let ((cache-item (company-lsp--cache-item-new
-                       '("prefix" "prefix123" "prefix1234" "prefix12345")
+                       (ensure-candidates-items '("prefix" "prefix123" "prefix1234" "prefix12345"))
                        nil)))
       (company-lsp--cache-put "prefix" cache-item)
       (expect (company-lsp--cache-get "prefix1234")
@@ -167,7 +179,8 @@
 
   (it "Should not return the cache item of sub-prefix if it's incomplete"
     (let ((company-lsp--completion-cache nil)
-          (cache-item '(:incomplete t ("foo" "bar"))))
+          (cache-item (company-lsp--cache-item-new (ensure-candidates-items '("foo" "bar"))
+                                                   t)))
       (company-lsp--cache-put "prefix" cache-item)
       (expect (company-lsp--cache-get "prefix1234")
               :to-equal nil))))
@@ -208,3 +221,21 @@
     (expect (company-lsp--get-config "bar" 'foo) :to-equal "bar")
     (expect (company-lsp--get-config t 'foo) :to-equal t)
     (expect (company-lsp--get-config nil 'foo) :to-equal nil)))
+
+(describe "company-lsp--filter-candidates"
+  (it "Should filter using filterText if available"
+    (defun make-candidate (label filterText)
+      (let ((item (make-hash-table :test 'equal)))
+        (puthash "label" label item)
+        (puthash "filterText" filterText item)
+        (company-lsp--make-candidate item "")))
+
+    (let ((candidates (list (make-candidate " 1" "foo")
+                            (make-candidate " 2" "bar"))))
+      (expect (company-lsp--filter-candidates candidates "f")
+              :to-equal '(" 1"))))
+
+  (it "Should filter using label if filterText is absent"
+    (let ((candidates (ensure-candidates-items '("foo" "bar"))))
+      (expect (company-lsp--filter-candidates candidates "f")
+              :to-equal '("foo")))))
