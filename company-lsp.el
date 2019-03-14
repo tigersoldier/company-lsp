@@ -66,6 +66,7 @@ Otherwise candidates are not filtered."
 
 (defcustom company-lsp-filter-candidates '((bingo . nil)
                                            (ccls . nil)
+                                           (clangd . nil)
                                            (cquery . nil)
                                            (javacomp . nil)
                                            (jdtls . nil)
