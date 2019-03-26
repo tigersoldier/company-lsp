@@ -480,10 +480,8 @@ which company can handle."
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate "documentation"))
          (item (company-lsp--candidate-item resolved-candidate))
          (documentation (gethash "documentation" item)))
-    (if
-        (hash-table-p documentation)  ;; If true, then the documentation is a MarkupContent. String otherwise.
-        (gethash "value" documentation)
-      documentation)))
+    (when documentation
+      (lsp--render-element documentation))))
 
 (defun company-lsp--candidates-sync (prefix)
   "Get completion candidates synchronously.
