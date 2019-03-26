@@ -117,6 +117,11 @@ item with the snippet and use yas-snippet to expand it."
   :type 'boolean
   :group 'company-lsp)
 
+(defcustom company-lsp-enable-trigger-kind t
+  "Whether or not to populate triggerKind field in the completion request."
+  :type 'boolean
+  :group 'company-lsp)
+
 (defcustom company-lsp-enable-recompletion t
   "Whether or not to re-trigger completion for trigger characters.
 
@@ -151,6 +156,22 @@ Company-lsp provides two builtin predicates:
 `company-lsp-match-candidate-flex'."
   :type 'function
   :group 'company-lsp)
+
+(defconst company-lsp--trigger-kind-invoked 1
+  "The completion is triggered by typing identifier or invoking `company-lsp'.
+
+Defined in LSP spec as CompletionTriggerKind.Invoked.")
+
+(defconst company-lsp--trigger-kind-trigger-character 2
+  "The completion is triggered by typing a trigger character.
+
+Defined in LSP spec as CompletionTriggerKind.TriggerCharacter.")
+
+(defconst company-lsp--trigger-kind-incomplete 3
+  "The completion is triggered by narrowing incomplete completion list.
+
+Defined in LSP spec as
+CompletionTriggerKind.TriggerForIncompleteCompletions.")
 
 (declare-function yas-expand-snippet "ext:yasnippet.el")
 
@@ -497,22 +518,34 @@ CANDIDATES is a cache item created by `company-lsp--cache-item-new'."
   "Get the cached completion for PREFIX.
 
 Return a cache item if cache for PREFIX exists. Otherwise return nil."
-  (let ((cache (cdr (assoc prefix company-lsp--completion-cache)))
-        (len (length prefix))
-        previous-cache)
-    (if cache
-        cache
-      (cl-dotimes (i len)
-        (when (setq previous-cache
-                    (cdr (assoc (substring prefix 0 (- len i 1))
-                                company-lsp--completion-cache)))
-          (if (company-lsp--cache-item-incomplete-p previous-cache)
-              (cl-return nil)
-            (let* ((previous-candidates (company-lsp--cache-item-candidates previous-cache))
-                   (new-candidates (company-lsp--filter-candidates previous-candidates prefix))
-                   (new-cache (company-lsp--cache-item-new new-candidates nil)))
-              (company-lsp--cache-put prefix new-cache)
-              (cl-return new-cache))))))))
+  (-when-let* ((cached (company-lsp--cache-find-closest prefix))
+               (subprefix (car cached))
+               (cache-item (cdr cached)))
+    (cond
+     ((string= prefix subprefix)
+      ;; Found exact match.
+      cache-item)
+     ((company-lsp--cache-item-incomplete-p cache-item)
+      ;; Closest subprefix has incomplete result. Return nil to ask for narrowed
+      ;; down results.
+      nil)
+     (t
+      ;; Narrow down complete results for subprefix.
+      (let* ((candidates (company-lsp--cache-item-candidates cache-item))
+             (new-candidates (company-lsp--filter-candidates candidates prefix))
+             (new-cache (company-lsp--cache-item-new new-candidates nil)))
+        (company-lsp--cache-put prefix new-cache)
+        new-cache)))))
+
+(defun company-lsp--cache-find-closest (prefix)
+  "Find cached completion with the longest sub-prefix of PREFIX.
+
+Return a cons cell of (subprefix . cache-item) or nil."
+  (let ((len (length prefix)))
+    (cl-dotimes (i (1+ len))
+      (when-let (item (assoc (substring prefix 0 (- len i))
+                             company-lsp--completion-cache))
+        (cl-return item)))))
 
 (defun company-lsp--cache-item-new (candidates incomplete)
   "Create a new cache item.
@@ -548,17 +581,16 @@ which company can handle."
 PREFIX is the prefix string for completion.
 
 Return a list of strings as completion candidates."
-  (let ((req (lsp--make-request "textDocument/completion"
-                                (lsp--text-document-position-params))))
-    (company-lsp--on-completion (lsp--send-request req) prefix)))
+  (company-lsp--on-completion
+   (lsp--send-request (company-lsp--make-completion-request prefix))
+   prefix))
 
 (defun company-lsp--candidates-async (prefix callback)
   "Get completion candidates asynchronously.
 
 PREFIX is the prefix string for completion.
 CALLBACK is a function that takes a list of strings as completion candidates."
-  (let ((req (lsp--make-request "textDocument/completion"
-                                (lsp--text-document-position-params)))
+  (let ((req (company-lsp--make-completion-request prefix))
         body)
     (company-lsp--cancel-outstanding-request)
     (setq body
@@ -567,6 +599,86 @@ CALLBACK is a function that takes a list of strings as completion candidates."
                                      (setq company-lsp--last-request-id nil)
                                      (funcall callback (company-lsp--on-completion resp prefix)))))
     (setq company-lsp--last-request-id (plist-get body :id))))
+
+(defun company-lsp--make-completion-request (prefix)
+  "Make request body for completion.
+
+PREFIX is a string prefix given by company-mode.
+
+Returns the request body that can be used by `lsp-send-request'
+or `lsp-send-request-async'."
+  (let ((params (lsp--text-document-position-params)))
+    (when company-lsp-enable-trigger-kind
+      (setq params (plist-put params :context
+                              (company-lsp--get-completion-context prefix))))
+    (lsp--make-request "textDocument/completion"
+                       params)))
+
+(defun company-lsp--get-completion-context (prefix)
+  "Return a plist representing a CompletionContext message for PREFIX.
+
+Returns one of `company-lsp--trigger-kind-invoked',
+`company-lsp--trigger-kind-trigger-character' and
+`company-lsp--trigger-kind-incomplete'."
+  (cond
+   ((or (eq this-command 'company-lsp)
+        (eq this-command 'company-begin-backend)
+        (eq this-command 'company-complete)
+        (eq this-command 'company-complete-common))
+    ;; Explicitly calling completion command.
+    (company-lsp--make-completion-context company-lsp--trigger-kind-invoked))
+   ((company-lsp--cache-find-closest prefix)
+    ;; Has incomplete candidates for sub-prefix. This assumes that if the
+    ;; candidates for sub-prefix, completion won't reach this step since the
+    ;; candidates for the sub-prefix can be narrowed down and returned directly.
+    (company-lsp--make-completion-context
+     company-lsp--trigger-kind-incomplete))
+   ((or (null company-point) (< company-point (point)))
+    ;; `company-point' is updated after backend gets called. So it's nil if
+    ;; backend is called for a new completion, or less than current point if
+    ;; backend is called after typing. Both cases indicates completion is
+    ;; triggered by typing.
+    (if-let (trigger-character (company-lsp--get-context-trigger-characters))
+        (company-lsp--make-completion-context
+         company-lsp--trigger-kind-trigger-character trigger-character)
+      (company-lsp--make-completion-context
+       company-lsp--trigger-kind-invoked)))
+   (t (company-lsp--make-completion-context company-lsp--trigger-kind-invoked))))
+
+(defun company-lsp--make-completion-context (trigger-kind &optional trigger-character)
+  "Create a plist representing a CompletionContext message.
+
+TRIGGER-KIND: one of `company-lsp--trigger-kind-invoked',
+`company-lsp--trigger-kind-trigger-character' and
+`company-lsp--trigger-kind-incomplete'.
+
+TRIGGER-CHARACTER: The trigger characters that triggers
+completion of kind `company-lsp--trigger-kind-trigger-character'.
+If the length of it is greater than 1, only the last character is
+used."
+  (let* ((trigger-len (if trigger-character (length trigger-character)
+                        0))
+         (single-trigger (if (> trigger-len 1)
+                             (substring trigger-character (1- trigger-len))
+                           trigger-character)))
+    (if trigger-character
+        (list :triggerKind trigger-kind
+              :triggerCharacter single-trigger)
+      (list :triggerKind trigger-kind))))
+
+(defun company-lsp--get-context-trigger-characters ()
+  "Return the trigger characters after current point.
+
+If there are multiple trigger characters matched (e.g. one is a
+suffix of another), return any of them. If no trigger characters
+match, return nil."
+  (let ((trigger-chars (company-lsp--trigger-characters)))
+    (seq-find (lambda (trigger-char)
+                (and (>= (point) (length trigger-char))
+                     (string= (buffer-substring (- (point) (length trigger-char))
+                                                (point))
+                              trigger-char)))
+              trigger-chars)))
 
 (defun company-lsp--compute-flex-match (label &optional prefix full-match)
   "Perform flex match for PREFIX in LABEL.
