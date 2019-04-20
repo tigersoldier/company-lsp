@@ -64,15 +64,20 @@ Otherwise candidates are not filtered."
                  (const :tag "Never cache" nil))
   :group 'company-lsp)
 
-(defcustom company-lsp-filter-candidates '((bingo . nil)
-                                           (ccls . nil)
-                                           (clangd . nil)
-                                           (cquery . nil)
-                                           (javacomp . nil)
-                                           (jdtls . nil)
-                                           (pyls . nil)
-                                           (rls . nil)
-                                           (t . t))
+(defcustom company-lsp-filter-candidates
+  ;; The server ID of bingo has been renamed to go-bingo. Keeping both for
+  ;; backward compatibility.
+  '((bingo . nil)
+    (ccls . nil)
+    (clangd . nil)
+    (cquery . nil)
+    (go-bingo . nil)
+    (gopls . nil)
+    (javacomp . nil)
+    (jdtls . nil)
+    (pyls . nil)
+    (rls . nil)
+    (t . t))
   "Whether or not to filter completion candidates returned by server.
 
 Some servers return unfiltered candidates while others do
