@@ -128,6 +128,15 @@ This is useful in cases such as 'std' is completed as 'std::' in C++."
   :type 'boolean
   :group 'company-lsp)
 
+(defcustom company-lsp-enable-additional-text-edit t
+  "Whether or not to apply additional text edit.
+
+If set to non-nil, company-lsp will apply additional text edits
+from the server. Otherwise, the additional text edits are
+ignored."
+  :type 'boolean
+  :group 'company-lsp)
+
 (declare-function yas-expand-snippet "ext:yasnippet.el")
 
 (defun company-lsp--get-config (config server-id)
@@ -322,7 +331,7 @@ CANDIDATE is a string returned by `company-lsp--make-candidate'."
       (insert insert-text)))
 
     (let ((start-marker (set-marker (make-marker) start)))
-      (when additional-text-edits
+      (when (and additional-text-edits company-lsp-enable-additional-text-edit)
         (lsp--apply-text-edits additional-text-edits))
       (when (and company-lsp-enable-snippet
                  (fboundp 'yas-expand-snippet))
