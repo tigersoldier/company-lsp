@@ -137,6 +137,21 @@ ignored."
   :type 'boolean
   :group 'company-lsp)
 
+(defcustom company-lsp-match-candidate-predicate #'company-lsp-match-candidate-flex
+  "Predicate function that determines whether a candidate matches given input.
+
+The function takes two parameters: CANDIDATE and PREFIX.
+CANDIDATE is a string created by `company-lsp--make-candidate'.
+PREFIX is the symbol before point that should be used for
+filtering. If the function returns non-nil, CANDIDATE will
+be presented in the completion list.
+
+Company-lsp provides two builtin predicates:
+`company-lsp-match-candidate-prefix' and
+`company-lsp-match-candidate-flex'."
+  :type 'function
+  :group 'company-lsp)
+
 (declare-function yas-expand-snippet "ext:yasnippet.el")
 
 (defun company-lsp--get-config (config server-id)
@@ -411,8 +426,22 @@ Returns a new list of candidates."
   ;; TODO: Allow customizing matching functions to support fuzzy matching.
   ;; Consider supporting company-flx out of box.
   (-filter (lambda (candidate)
-             (s-starts-with-p prefix (company-lsp--candidate-filter-text candidate) t))
+             (funcall company-lsp-match-candidate-predicate candidate prefix))
            candidates))
+
+(defun company-lsp-match-candidate-prefix (candidate prefix)
+  "Return non-nil if the filter text of CANDIDATE starts with PREFIX.
+
+The match is case-insensitive."
+  (s-starts-with-p prefix (company-lsp--candidate-filter-text candidate) t))
+
+(defun company-lsp-match-candidate-flex (candidate prefix)
+  "Return non-nil if the filter text of CANDIDATE matches PREFIX.
+
+See `company-lsp--compute-flex-match' for more details."
+  (company-lsp--compute-flex-match (company-lsp--candidate-filter-text candidate)
+                                   prefix
+                                   t))
 
 (defun company-lsp--candidate-filter-text (candidate)
   "Return filter string of CANDIDATE.
@@ -523,40 +552,51 @@ CALLBACK is a function that takes a list of strings as completion candidates."
                                      (funcall callback (company-lsp--on-completion resp prefix)))))
     (setq company-lsp--last-request-id (plist-get body :id))))
 
-(defun company-lsp--compute-match (candidate)
-  "Compute the matched parts of CANDIDATE.
+(defun company-lsp--compute-flex-match (label &optional prefix full-match)
+  "Perform flex match for PREFIX in LABEL.
 
-CANDIDATE is a string of the candidate label.
+This function finds out substrings in LABEL. The concatenation of
+those substrings is a prefix of PREFIX if FULL-MATCH is nil, or
+is exactly PREFIX if FULL-MATCH is non-nil.
 
-Return an alist of (CHUNK-START . CHUNK-END), representing parts
-within CANDIDATE that matches the current prefix. See the
-\"match\" section of `company-backends' for more info."
-  (let* ((prefix (company-lsp--completion-prefix))
+If PREFIX is nil, the return value of
+`company-lsp--completion-prefix' is used as PREFIX.
+
+Return an alist of (substring-start . substring-end),
+representing the inclusive start position and exclusive end
+position of those substrings. This is compatible with the result
+for the \"match\" command for company-mode backends. See the
+\"match\" section of `company-backends' for more info. Note that
+if FULL-MATCH is non-nil and the concatenation of substrings does
+not equal to PREFIX, nil is returned."
+  (let* ((prefix (or prefix (company-lsp--completion-prefix)))
          (prefix-str (downcase (if (consp prefix) (car prefix)
                                  prefix)))
          (prefix-pos 0)
          (prefix-len (length prefix-str))
-         (candidate-pos 0)
-         (candidate-len (length candidate))
-         (candidate-str (downcase candidate))
-         chunks
-         chunk-start)
+         (label-pos 0)
+         (label-len (length label))
+         (label-str (downcase label))
+         substrings
+         substring-start)
     (while (and (< prefix-pos prefix-len)
-                (< candidate-pos candidate-len))
+                (< label-pos label-len))
       (if (= (aref prefix-str prefix-pos)
-             (aref candidate-str candidate-pos))
+             (aref label-str label-pos))
           (progn
-            (when (not chunk-start)
-              (setq chunk-start candidate-pos))
+            (when (not substring-start)
+              (setq substring-start label-pos))
             (cl-incf prefix-pos)
-            (cl-incf candidate-pos))
-        (when chunk-start
-          (push (cons chunk-start candidate-pos) chunks)
-          (setq chunk-start nil))
-        (cl-incf candidate-pos)))
-    (when chunk-start
-      (push (cons chunk-start candidate-pos) chunks))
-    (nreverse chunks)))
+            (cl-incf label-pos))
+        (when substring-start
+          (push (cons substring-start label-pos) substrings)
+          (setq substring-start nil))
+        (cl-incf label-pos)))
+    (when substring-start
+      (push (cons substring-start label-pos) substrings))
+    (if (or (not full-match) (= prefix-pos prefix-len))
+        (nreverse substrings)
+      nil)))
 
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
@@ -566,7 +606,8 @@ See the documentation of `company-backends' for COMMAND and ARG."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend #'company-lsp))
-    (prefix (and
+    (prefix
+     (and
              (bound-and-true-p lsp-mode)
              (lsp--capability "completionProvider")
              (not (company-in-string-or-comment))
@@ -587,7 +628,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
-    (match (company-lsp--compute-match arg))
+    (match (company-lsp--compute-flex-match arg))
     (post-completion (company-lsp--post-completion arg))))
 
 (defun company-lsp--client-capabilities ()
