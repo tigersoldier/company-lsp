@@ -223,19 +223,94 @@
     (expect (company-lsp--get-config nil 'foo) :to-equal nil)))
 
 (describe "company-lsp--filter-candidates"
-  (it "Should filter using filterText if available"
-    (defun make-candidate (label filterText)
-      (let ((item (make-hash-table :test 'equal)))
-        (puthash "label" label item)
-        (puthash "filterText" filterText item)
-        (company-lsp--make-candidate item "")))
+  (describe "with prefix match"
+    (before-each
+      (setq company-lsp-match-candidate-predicate #'company-lsp-match-candidate-prefix))
+    (it "Should filter using filterText if available"
+      (defun make-candidate (label filterText)
+        (let ((item (make-hash-table :test 'equal)))
+          (puthash "label" label item)
+          (puthash "filterText" filterText item)
+          (company-lsp--make-candidate item "")))
 
-    (let ((candidates (list (make-candidate " 1" "foo")
-                            (make-candidate " 2" "bar"))))
-      (expect (company-lsp--filter-candidates candidates "f")
-              :to-equal '(" 1"))))
+      (let ((candidates (list (make-candidate " 1" "foo")
+                              (make-candidate " 2" "bar"))))
+        (expect (company-lsp--filter-candidates candidates "f")
+                :to-equal '(" 1"))))
 
-  (it "Should filter using label if filterText is absent"
-    (let ((candidates (ensure-candidates-items '("foo" "bar"))))
-      (expect (company-lsp--filter-candidates candidates "f")
-              :to-equal '("foo")))))
+    (it "Should filter using label if filterText is absent"
+      (let ((candidates (ensure-candidates-items '("foo" "bar"))))
+        (expect (company-lsp--filter-candidates candidates "f")
+                :to-equal '("foo")))))
+
+  (describe "with flex match"
+    (before-each
+      (setq company-lsp-match-candidate-predicate #'company-lsp-match-candidate-flex))
+
+    (it "Should filter using filterText if available"
+      (defun make-candidate (label filterText)
+        (let ((item (make-hash-table :test 'equal)))
+          (puthash "label" label item)
+          (puthash "filterText" filterText item)
+          (company-lsp--make-candidate item "")))
+
+      (let ((candidates (list (make-candidate " 1" "zab")
+                              (make-candidate " 2" "zabc"))))
+        (expect (company-lsp--filter-candidates candidates "abc")
+                :to-equal '(" 2"))))
+
+    (it "Should filter using label if filterText is absent"
+      (let ((candidates (ensure-candidates-items
+                         '("ab" "abc" "zabc" "abcz" "zabcz" "zazbzcz"
+                           "acb" "cab" "cba"))))
+        (expect (company-lsp--filter-candidates candidates "abc")
+                :to-equal '("abc" "zabc" "abcz" "zabcz" "zazbzcz"))))))
+
+(describe "company-lsp--compute-flex-match"
+  (describe "with full match"
+    (it "matches exactly same string"
+      (expect (company-lsp--compute-flex-match "abc" "abc" t)
+              :to-equal '((0 . 3))))
+
+    (it "matches suffix"
+      (expect (company-lsp--compute-flex-match "zabc" "abc" t)
+              :to-equal '((1 . 4))))
+
+    (it "matches prefix"
+      (expect (company-lsp--compute-flex-match "abcz" "abc" t)
+              :to-equal '((0 . 3))))
+
+    (it "matches consecutive substring"
+      (expect (company-lsp--compute-flex-match "zabcz" "abc" t)
+              :to-equal '((1 . 4))))
+
+    (it "matches flexly"
+      (expect (company-lsp--compute-flex-match "zazbzcz" "abc" t)
+              :to-equal '((1 . 2) (3 . 4) (5 . 6))))
+
+    (it "is case-insensitive"
+      (expect (company-lsp--compute-flex-match "zAzbzcz" "abC" t)
+              :to-equal '((1 . 2) (3 . 4) (5 . 6))))
+
+    (it "does not partial match"
+      (expect (company-lsp--compute-flex-match "ab" "abc" t)
+              :to-equal nil)
+      (expect (company-lsp--compute-flex-match "a" "abc" t)
+              :to-equal nil)
+      (expect (company-lsp--compute-flex-match "bc" "abc" t)
+              :to-equal nil))
+
+    (it "does not match substrings out of order"
+      (expect (company-lsp--compute-flex-match "cbabc" "abc" t)
+              :to-equal '((2 . 5)))
+      (expect (company-lsp--compute-flex-match "cba" "abc" t)
+              :to-equal nil)))
+
+  (describe "does partial match of sub-prefix"
+    (it "does partial match"
+      (expect (company-lsp--compute-flex-match "zazb" "abc" nil)
+              :to-equal '((1 . 2) (3 . 4)))
+      (expect (company-lsp--compute-flex-match "zbza" "abc" nil)
+              :to-equal '((3 . 4)))
+      (expect (company-lsp--compute-flex-match "bc" "abc" nil)
+              :to-equal nil))))
