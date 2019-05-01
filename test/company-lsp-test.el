@@ -261,56 +261,57 @@
 
     (it "Should filter using label if filterText is absent"
       (let ((candidates (ensure-candidates-items
-                         '("ab" "abc" "zabc" "abcz" "zabcz" "zazbzcz"
-                           "acb" "cab" "cba"))))
-        (expect (company-lsp--filter-candidates candidates "abc")
-                :to-equal '("abc" "zabc" "abcz" "zabcz" "zazbzcz"))))))
+                         '("ab" "zabc" "abcz" "zabcz" "zazbzcz" "cbabc"
+                           "ABC" "abc" "acb" "cab" "cba"))))
+        (expect (mapcar #'substring-no-properties
+                        (company-lsp--filter-candidates candidates "abc"))
+                :to-equal '("abc" "abcz" "ABC" "zabc" "zabcz" "cbabc" "zazbzcz"))))))
 
 (describe "company-lsp--compute-flex-match"
   (describe "with full match"
     (it "matches exactly same string"
-      (expect (company-lsp--compute-flex-match "abc" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "abc" "abc" t))
               :to-equal '((0 . 3))))
 
     (it "matches suffix"
-      (expect (company-lsp--compute-flex-match "zabc" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "zabc" "abc" t))
               :to-equal '((1 . 4))))
 
     (it "matches prefix"
-      (expect (company-lsp--compute-flex-match "abcz" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "abcz" "abc" t))
               :to-equal '((0 . 3))))
 
     (it "matches consecutive substring"
-      (expect (company-lsp--compute-flex-match "zabcz" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "zabcz" "abc" t))
               :to-equal '((1 . 4))))
 
     (it "matches flexly"
-      (expect (company-lsp--compute-flex-match "zazbzcz" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "zazbzcz" "abc" t))
               :to-equal '((1 . 2) (3 . 4) (5 . 6))))
 
     (it "is case-insensitive"
-      (expect (company-lsp--compute-flex-match "zAzbzcz" "abC" t)
+      (expect (cdr (company-lsp--compute-flex-match "zAzbzcz" "abC" t))
               :to-equal '((1 . 2) (3 . 4) (5 . 6))))
 
     (it "does not partial match"
-      (expect (company-lsp--compute-flex-match "ab" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "ab" "abc" t))
               :to-equal nil)
-      (expect (company-lsp--compute-flex-match "a" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "a" "abc" t))
               :to-equal nil)
-      (expect (company-lsp--compute-flex-match "bc" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "bc" "abc" t))
               :to-equal nil))
 
     (it "does not match substrings out of order"
-      (expect (company-lsp--compute-flex-match "cbabc" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "cbabc" "abc" t))
               :to-equal '((2 . 5)))
-      (expect (company-lsp--compute-flex-match "cba" "abc" t)
+      (expect (cdr (company-lsp--compute-flex-match "cba" "abc" t))
               :to-equal nil)))
 
   (describe "does partial match of sub-prefix"
     (it "does partial match"
-      (expect (company-lsp--compute-flex-match "zazb" "abc" nil)
+      (expect (cdr (company-lsp--compute-flex-match "zazb" "abc" nil))
               :to-equal '((1 . 2) (3 . 4)))
-      (expect (company-lsp--compute-flex-match "zbza" "abc" nil)
+      (expect (cdr (company-lsp--compute-flex-match "zbza" "abc" nil))
               :to-equal '((3 . 4)))
-      (expect (company-lsp--compute-flex-match "bc" "abc" nil)
+      (expect (cdr (company-lsp--compute-flex-match "bc" "abc" nil))
               :to-equal nil))))

@@ -425,9 +425,25 @@ CANDIDATES are a list of strings of candidate labels created by
 Returns a new list of candidates."
   ;; TODO: Allow customizing matching functions to support fuzzy matching.
   ;; Consider supporting company-flx out of box.
-  (-filter (lambda (candidate)
-             (funcall company-lsp-match-candidate-predicate candidate prefix))
-           candidates))
+  (let (resort)
+    (--> candidates
+         ;; candidate -> (score matched candidate)
+         (mapcar (lambda (candidate)
+                   (let ((match (funcall company-lsp-match-candidate-predicate candidate prefix)))
+                     (if (consp match)
+                         (progn
+                           (setq resort t)
+                           (list (car match) (cdr match) candidate))
+                       (list -1 match candidate))))
+                 it)
+         (-filter (lambda (item)
+                    (nth 1 item))
+                  it)
+         (if resort
+             (sort it (lambda (a b) (< (car a) (car b))))
+           it)
+         (mapcar (lambda (item) (nth 2 item))
+                 it))))
 
 (defun company-lsp-match-candidate-prefix (candidate prefix)
   "Return non-nil if the filter text of CANDIDATE starts with PREFIX.
@@ -562,41 +578,55 @@ is exactly PREFIX if FULL-MATCH is non-nil.
 If PREFIX is nil, the return value of
 `company-lsp--completion-prefix' is used as PREFIX.
 
-Return an alist of (substring-start . substring-end),
-representing the inclusive start position and exclusive end
-position of those substrings. This is compatible with the result
-for the \"match\" command for company-mode backends. See the
-\"match\" section of `company-backends' for more info. Note that
-if FULL-MATCH is non-nil and the concatenation of substrings does
+Return a cons cell of (score . substrings). Score is a number for
+sorting, the smaller the better. When FULL-MATCH is non-nil and
+there is no match, score is always -1. Substrings is an alist
+of (substring-start . substring-end), representing the inclusive
+start position and exclusive end position of those substrings.
+The alist of strings is compatible with the result for the
+\"match\" command for company-mode backends. See the \"match\"
+section of `company-backends' for more info. Note that if
+FULL-MATCH is non-nil and the concatenation of substrings does
 not equal to PREFIX, nil is returned."
-  (let* ((prefix (or prefix (company-lsp--completion-prefix)))
-         (prefix-str (downcase (if (consp prefix) (car prefix)
-                                 prefix)))
+  (let* ((prefix-obj (or prefix (company-lsp--completion-prefix)))
+         (prefix-str (if (consp prefix-obj) (car prefix-obj) prefix-obj))
+         (prefix-low (downcase prefix-str))
          (prefix-pos 0)
-         (prefix-len (length prefix-str))
+         (prefix-len (length prefix-low))
          (label-pos 0)
          (label-len (length label))
-         (label-str (downcase label))
+         (label-low (downcase label))
          substrings
-         substring-start)
+         substring-start
+         ;; Initial penalty for the difference of length, but with lower weight.
+         (score (abs (- label-len prefix-len))))
     (while (and (< prefix-pos prefix-len)
                 (< label-pos label-len))
-      (if (= (aref prefix-str prefix-pos)
-             (aref label-str label-pos))
+      (if (= (aref prefix-low prefix-pos)
+             (aref label-low label-pos))
           (progn
             (when (not substring-start)
-              (setq substring-start label-pos))
-            (cl-incf prefix-pos)
-            (cl-incf label-pos))
+              (setq substring-start label-pos)
+              ;; We simply use the sum of all substring start positions as the
+              ;; score. This is a good proxy that prioritize fewer substring parts
+              ;; and earlier occurrence of substrings.
+              (cl-incf score (* substring-start 100)))
+            (when (not (= (aref prefix-str prefix-pos)
+                          (aref label label-pos)))
+              ;; The prefix and label have different cases. Adding penalty to
+              ;; the score. It has lower weight than substring start but higher
+              ;; than the length difference.
+              (cl-incf score 10))
+            (cl-incf prefix-pos))
         (when substring-start
           (push (cons substring-start label-pos) substrings)
-          (setq substring-start nil))
-        (cl-incf label-pos)))
+          (setq substring-start nil)))
+      (cl-incf label-pos))
     (when substring-start
       (push (cons substring-start label-pos) substrings))
     (if (or (not full-match) (= prefix-pos prefix-len))
-        (nreverse substrings)
-      nil)))
+        (cons score (nreverse substrings))
+      (cons -1 nil))))
 
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)
@@ -608,10 +638,10 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (interactive (company-begin-backend #'company-lsp))
     (prefix
      (and
-             (bound-and-true-p lsp-mode)
-             (lsp--capability "completionProvider")
-             (not (company-in-string-or-comment))
-             (or (company-lsp--completion-prefix) 'stop)))
+      (bound-and-true-p lsp-mode)
+      (lsp--capability "completionProvider")
+      (not (company-in-string-or-comment))
+      (or (company-lsp--completion-prefix) 'stop)))
     (candidates
      ;; If the completion items in the response have textEdit action populated,
      ;; we'll apply them in `company-lsp--post-completion'. However, textEdit
@@ -628,7 +658,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
-    (match (company-lsp--compute-flex-match arg))
+    (match (cdr (company-lsp--compute-flex-match arg)))
     (post-completion (company-lsp--post-completion arg))))
 
 (defun company-lsp--client-capabilities ()
