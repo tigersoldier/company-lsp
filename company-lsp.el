@@ -712,33 +712,35 @@ not equal to PREFIX, nil is returned."
          substring-start
          ;; Initial penalty for the difference of length, but with lower weight.
          (score (abs (- label-len prefix-len))))
-    (while (and (< prefix-pos prefix-len)
-                (< label-pos label-len))
-      (if (= (aref prefix-low prefix-pos)
-             (aref label-low label-pos))
-          (progn
-            (when (not substring-start)
-              (setq substring-start label-pos)
-              ;; We simply use the sum of all substring start positions as the
-              ;; score. This is a good proxy that prioritize fewer substring parts
-              ;; and earlier occurrence of substrings.
-              (cl-incf score (* substring-start 100)))
-            (when (not (= (aref prefix-str prefix-pos)
-                          (aref label label-pos)))
-              ;; The prefix and label have different cases. Adding penalty to
-              ;; the score. It has lower weight than substring start but higher
-              ;; than the length difference.
-              (cl-incf score 10))
-            (cl-incf prefix-pos))
-        (when substring-start
-          (push (cons substring-start label-pos) substrings)
-          (setq substring-start nil)))
-      (cl-incf label-pos))
-    (when substring-start
-      (push (cons substring-start label-pos) substrings))
-    (if (or (not full-match) (= prefix-pos prefix-len))
-        (cons score (nreverse substrings))
-      (cons -1 nil))))
+    (if (string-empty-p prefix-str)
+        '(0 . ((0 . 0)))
+      (while (and (< prefix-pos prefix-len)
+                  (< label-pos label-len))
+        (if (= (aref prefix-low prefix-pos)
+               (aref label-low label-pos))
+            (progn
+              (when (not substring-start)
+                (setq substring-start label-pos)
+                ;; We simply use the sum of all substring start positions as the
+                ;; score. This is a good proxy that prioritize fewer substring parts
+                ;; and earlier occurrence of substrings.
+                (cl-incf score (* substring-start 100)))
+              (when (not (= (aref prefix-str prefix-pos)
+                            (aref label label-pos)))
+                ;; The prefix and label have different cases. Adding penalty to
+                ;; the score. It has lower weight than substring start but higher
+                ;; than the length difference.
+                (cl-incf score 10))
+              (cl-incf prefix-pos))
+          (when substring-start
+            (push (cons substring-start label-pos) substrings)
+            (setq substring-start nil)))
+        (cl-incf label-pos))
+      (when substring-start
+        (push (cons substring-start label-pos) substrings))
+      (if (or (not full-match) (= prefix-pos prefix-len))
+          (cons score (nreverse substrings))
+        (cons -1 nil)))))
 
 ;;;###autoload
 (defun company-lsp (command &optional arg &rest _)

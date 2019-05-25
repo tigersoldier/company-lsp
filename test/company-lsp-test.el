@@ -269,6 +269,10 @@
 
 (describe "company-lsp--compute-flex-match"
   (describe "with full match"
+    (it "matches empty string"
+      (expect (cdr (company-lsp--compute-flex-match "abc" "" t))
+              :to-equal '((0 . 0))))
+
     (it "matches exactly same string"
       (expect (cdr (company-lsp--compute-flex-match "abc" "abc" t))
               :to-equal '((0 . 3))))
@@ -309,6 +313,10 @@
 
   (describe "does partial match of sub-prefix"
     (it "does partial match"
+      (expect (cdr (company-lsp--compute-flex-match "abc" "" nil))
+              :to-equal '((0 . 0)))
+      (expect (cdr (company-lsp--compute-flex-match "abc" "abc" nil))
+              :to-equal '((0 . 3)))
       (expect (cdr (company-lsp--compute-flex-match "zazb" "abc" nil))
               :to-equal '((1 . 2) (3 . 4)))
       (expect (cdr (company-lsp--compute-flex-match "zbza" "abc" nil))
