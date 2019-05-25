@@ -81,11 +81,7 @@ Otherwise candidates are not filtered."
   "Whether or not to filter completion candidates returned by server.
 
 Some servers return unfiltered candidates while others do
-server-side filtering. This option controls whether or not to
-filter candidates on client-side when
-`company-lsp-cache-candidates' is nil for the current server. This
-option doesn't change the filtering behavior when
-`company-lsp-cache-candidates' is set to auto or t.
+server-side filtering.
 
 Value can be t, nil, or an alist. When set
 to t, always filter candidates regardless of the current language
@@ -423,19 +419,22 @@ Return a list of strings as the completion candidates."
                                (company-lsp--make-candidate item prefix))
                              (lsp--sort-completions items)))
          (server-id (lsp--client-server-id (lsp--workspace-client lsp--cur-workspace)))
-         (should-filter (or (eq company-lsp-cache-candidates t)
-                            (and (null company-lsp-cache-candidates)
-                                 (company-lsp--get-config company-lsp-filter-candidates server-id)))))
-    (when (null company-lsp--completion-cache)
-      (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
-      (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
-    (when (eq company-lsp-cache-candidates 'auto)
-      ;; Only cache candidates on auto mode. If it's t company caches the
-      ;; candidates for us.
-      (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))
-    (if should-filter
-        (company-lsp--filter-candidates candidates prefix)
-      candidates)))
+         (should-filter (company-lsp--get-config company-lsp-filter-candidates server-id)))
+    (when should-filter
+      (setq candidates (company-lsp--filter-candidates candidates prefix)))
+    ;; Only cache candidates on auto mode. If it's t company caches the
+    ;; candidates for us.
+    (when (and (eq company-lsp-cache-candidates 'auto)
+               ;; When the cache is empty, it's starting a new completion
+               ;; session. In this case, an empty candidate list won't start
+               ;; completion session so the cancel/finish hooks will not be run.
+               ;; We cannot set cache in this case, otherwise it won't be
+               ;; cleaned up since the hooks will not be run.
+               (or company-lsp--completion-cache candidates))
+      (when (null company-lsp--completion-cache)
+        (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
+        (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
+      (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))))
 
 (defun company-lsp--filter-candidates (candidates prefix)
   "Filter CANDIDATES by PREFIX.
