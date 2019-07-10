@@ -59,7 +59,7 @@ After installing company-lsp, simply add `company-lsp` to `company-backends`:
 ## Defining completion snippet for a certain language
 
 If the language server for that language doesn't support returning snippets, you
-can customize the variable `company-lsp--snippet-functions` do define snippets
+can customize the variable `company-lsp--snippet-functions` to define snippets
 for candidates. `company-lsp--snippet-functions` is an alist of `(LANGUAGE-ID .
 SNIPPET-FUNCTION)`.
 
