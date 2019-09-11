@@ -216,7 +216,10 @@ Return value is compatible with the `prefix' command of a company backend.
 Return nil if no completion should be triggered. Return a string
 as the prefix to be completed, or a cons cell of (prefix . t) to bypass
 `company-minimum-prefix-length' for trigger characters."
-  (if-let ((trigger-chars (company-lsp--trigger-characters)))
+  (let ((trigger-chars (company-lsp--trigger-characters)))
+    (cond
+     ((company-lsp--looking-back-trigger-characters-p) "")
+     (trigger-chars
       (let* ((max-trigger-len (apply 'max (mapcar (lambda (trigger-char)
                                                     (length trigger-char))
                                                   trigger-chars)))
@@ -236,7 +239,7 @@ as the prefix to be completed, or a cons cell of (prefix . t) to bypass
           (if trigger-char
               (cons (substring symbol (length trigger-char)) t)
             symbol-cons)))
-    (company-grab-symbol)))
+    (company-grab-symbol)))))
 
 (defun company-lsp--make-candidate (item prefix)
   "Convert a CompletionItem JSON data to a string.
