@@ -770,7 +770,7 @@ See the documentation of `company-backends' for COMMAND and ARG."
                              (company-lsp--candidates-async arg callback))))
          (company-lsp--candidates-sync arg)))
     (sorted t)
-    (no-cache (not (eq company-lsp-cache-candidates t)))
+    (no-cache t)
     (annotation (lsp--annotate arg))
     (quickhelp-string (company-lsp--documentation arg))
     (doc-buffer (company-doc-buffer (company-lsp--documentation arg)))
