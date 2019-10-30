@@ -782,9 +782,5 @@ See the documentation of `company-backends' for COMMAND and ARG."
   (when company-lsp-enable-snippet
     '(:textDocument (:completion (:completionItem (:snippetSupport t))))))
 
-(add-hook 'lsp-before-initialize-hook
-          (lambda ()
-            (lsp-register-client-capabilities 'company-lsp #'company-lsp--client-capabilities)))
-
 (provide 'company-lsp)
 ;;; company-lsp.el ends here
