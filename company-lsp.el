@@ -293,16 +293,17 @@ Returns CANDIDATE with the resolved CompletionItem."
   "Function providing snippet with the rust language.
 It parses the function's signature in ITEM (a CompletionItem)
 to expand its arguments."
-  (-when-let* ((kind (gethash "kind" item))
-               (is-function (= kind 3)))
-    (let* ((detail (gethash "detail" item))
-           (snippet (when (and detail (s-matches? "^\\(pub \\)?\\(unsafe \\)?fn " detail))
-                      (-some--> (substring detail (1+ (s-index-of "(" detail)) (s-index-of ")" detail))
-                                (replace-regexp-in-string "^[^,]*self\\(, \\)?" "" it)
-                                (and (not (s-blank-str? it)) it)
-                                (s-split ", " it)
-                                (mapconcat (lambda (x) (format "${%s}" x)) it ", ")))))
-      (concat "(" (or snippet "$1") ")$0"))))
+  (unless (lsp-find-workspace 'rust-analyzer (buffer-file-name)) ;; rust-analyzer has better server-side logic
+    (-when-let* ((kind (gethash "kind" item))
+                 (is-function (= kind 3)))
+      (let* ((detail (gethash "detail" item))
+             (snippet (when (and detail (s-matches? "^\\(pub \\)?\\(unsafe \\)?fn " detail))
+                        (-some--> (substring detail (1+ (s-index-of "(" detail)) (s-index-of ")" detail))
+                          (replace-regexp-in-string "^[^,]*self\\(, \\)?" "" it)
+                          (and (not (s-blank-str? it)) it)
+                          (s-split ", " it)
+                          (mapconcat (lambda (x) (format "${%s}" x)) it ", ")))))
+        (concat "(" (or snippet "$1") ")$0")))))
 
 (defun company-lsp--fallback-snippet (item)
   "Return the fallback snippet to expand for ITEM.
