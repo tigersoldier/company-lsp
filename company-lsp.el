@@ -424,18 +424,23 @@ Return a list of strings as the completion candidates."
                              (lsp--sort-completions items)))
          (server-id (lsp--client-server-id (lsp--workspace-client lsp--cur-workspace)))
          (should-filter (or (eq company-lsp-cache-candidates t)
-                            (and (null company-lsp-cache-candidates)
+                            (and (not (null company-lsp-cache-candidates))
                                  (company-lsp--get-config company-lsp-filter-candidates server-id)))))
     (when (null company-lsp--completion-cache)
       (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
       (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
-    (when (eq company-lsp-cache-candidates 'auto)
-      ;; Only cache candidates on auto mode. If it's t company caches the
-      ;; candidates for us.
-      (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))
-    (if should-filter
-        (company-lsp--filter-candidates candidates prefix)
-      candidates)))
+    ;; Only cache candidates on auto mode. If it's t company caches the
+    ;; candidates for us.
+    (cond ((and should-filter (eq company-lsp-cache-candidates 'auto))
+           (let ((filtered-candidates (company-lsp--filter-candidates candidates prefix)))
+             (company-lsp--cache-put prefix (company-lsp--cache-item-new filtered-candidates incomplete))
+             filtered-candidates)
+           )
+          ((not (not should-filter)) (company-lsp--filter-candidates candidates prefix))
+          ((eq company-lsp-cache-candidates 'auto)
+           (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete))
+           candidates)
+          (t candidates))))
 
 (defun company-lsp--filter-candidates (candidates prefix)
   "Filter CANDIDATES by PREFIX.
