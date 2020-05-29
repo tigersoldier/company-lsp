@@ -576,9 +576,16 @@ otherwise. If the documentation is not present, it will return nil
 which company can handle."
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate "documentation"))
          (item (company-lsp--candidate-item resolved-candidate))
-         (documentation (gethash "documentation" item)))
-    (when documentation
-      (lsp--render-element documentation))))
+         (documentation (gethash "documentation" item))
+         (detail (gethash "detail" item))
+         (contents (list detail documentation)))
+    (string-join
+     (seq-map
+      #'lsp--render-element
+      contents)
+     (if (bound-and-true-p page-break-lines-mode)
+         "\n\n"
+       "\n"))))
 
 (defun company-lsp--candidates-sync (prefix)
   "Get completion candidates synchronously.
