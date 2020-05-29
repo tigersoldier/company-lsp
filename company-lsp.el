@@ -585,7 +585,7 @@ which company can handle."
       contents)
      (if (bound-and-true-p page-break-lines-mode)
          "\n\n"
-       "\n"))))
+       "\n\n"))))
 
 (defun company-lsp--candidates-sync (prefix)
   "Get completion candidates synchronously.
