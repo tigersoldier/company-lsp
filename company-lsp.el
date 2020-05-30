@@ -64,6 +64,13 @@ Otherwise candidates are not filtered."
                  (const :tag "Never cache" nil))
   :group 'company-lsp)
 
+(defvar company-lsp-document-language
+  '(("typescriptreact" . "tsx")
+    ("javascriptreact" . "jsx")
+    ("javascript" . "typescript"))
+  "Get the document's languageId from textDocument/resolve")
+
+
 (defcustom company-lsp-filter-candidates
   ;; The server ID of bingo has been renamed to go-bingo. Keeping both for
   ;; backward compatibility.
@@ -187,6 +194,14 @@ If CONFIG is not a list, return it directly."
   (if (listp config)
       (if-let (server-config (assq server-id config))
           (cdr server-config)
+        (alist-get t config))
+    config))
+
+(defun company-lsp--get-language (config language)
+  "get the config value for document language"
+  (if (listp config)
+      (if-let (language-config (assoc language config))
+          (cdr language-config)
         (alist-get t config))
     config))
 
@@ -424,18 +439,23 @@ Return a list of strings as the completion candidates."
                              (lsp--sort-completions items)))
          (server-id (lsp--client-server-id (lsp--workspace-client lsp--cur-workspace)))
          (should-filter (or (eq company-lsp-cache-candidates t)
-                            (and (null company-lsp-cache-candidates)
+                            (and (not (null company-lsp-cache-candidates))
                                  (company-lsp--get-config company-lsp-filter-candidates server-id)))))
     (when (null company-lsp--completion-cache)
       (add-hook 'company-completion-cancelled-hook #'company-lsp--cleanup-cache nil t)
       (add-hook 'company-completion-finished-hook #'company-lsp--cleanup-cache nil t))
-    (when (eq company-lsp-cache-candidates 'auto)
-      ;; Only cache candidates on auto mode. If it's t company caches the
-      ;; candidates for us.
-      (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete)))
-    (if should-filter
-        (company-lsp--filter-candidates candidates prefix)
-      candidates)))
+    ;; Only cache candidates on auto mode. If it's t company caches the
+    ;; candidates for us.
+    (cond ((and should-filter (eq company-lsp-cache-candidates 'auto))
+           (let ((filtered-candidates (company-lsp--filter-candidates candidates prefix)))
+             (company-lsp--cache-put prefix (company-lsp--cache-item-new filtered-candidates incomplete))
+             filtered-candidates)
+           )
+          ((not (not should-filter)) (company-lsp--filter-candidates candidates prefix))
+          ((eq company-lsp-cache-candidates 'auto)
+           (company-lsp--cache-put prefix (company-lsp--cache-item-new candidates incomplete))
+           candidates)
+          (t candidates))))
 
 (defun company-lsp--filter-candidates (candidates prefix)
   "Filter CANDIDATES by PREFIX.
@@ -571,9 +591,18 @@ otherwise. If the documentation is not present, it will return nil
 which company can handle."
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate "documentation"))
          (item (company-lsp--candidate-item resolved-candidate))
-         (documentation (gethash "documentation" item)))
-    (when documentation
-      (lsp--render-element documentation))))
+         (documentation (gethash "documentation" item))
+         (detail (make-hash-table :test 'equal)))
+    (puthash "language" (or (company-lsp--get-language company-lsp-document-language (lsp-buffer-language)) (lsp-buffer-language)) detail)
+    (puthash "value" (gethash "detail" item) detail)
+    (setq contents (list detail documentation))
+    (string-join
+     (seq-map
+      #'lsp--render-element
+      contents)
+     (if (bound-and-true-p page-break-lines-mode)
+         "\n\n"
+       "\n\n"))))
 
 (defun company-lsp--candidates-sync (prefix)
   "Get completion candidates synchronously.
