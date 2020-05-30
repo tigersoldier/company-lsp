@@ -64,6 +64,13 @@ Otherwise candidates are not filtered."
                  (const :tag "Never cache" nil))
   :group 'company-lsp)
 
+(defvar company-lsp-document-language
+  '(("typescriptreact" . "tsx")
+    ("javascriptreact" . "jsx")
+    ("javascript" . "typescript"))
+  "Get the document's languageId from textDocument/resolve")
+
+
 (defcustom company-lsp-filter-candidates
   ;; The server ID of bingo has been renamed to go-bingo. Keeping both for
   ;; backward compatibility.
@@ -187,6 +194,14 @@ If CONFIG is not a list, return it directly."
   (if (listp config)
       (if-let (server-config (assq server-id config))
           (cdr server-config)
+        (alist-get t config))
+    config))
+
+(defun company-lsp--get-language (config language)
+  "get the config value for document language"
+  (if (listp config)
+      (if-let (language-config (assoc language config))
+          (cdr language-config)
         (alist-get t config))
     config))
 
@@ -577,8 +592,10 @@ which company can handle."
   (let* ((resolved-candidate (company-lsp--resolve-candidate candidate "documentation"))
          (item (company-lsp--candidate-item resolved-candidate))
          (documentation (gethash "documentation" item))
-         (detail (gethash "detail" item))
-         (contents (list detail documentation)))
+         (detail (make-hash-table :test 'equal)))
+    (puthash "language" (or (company-lsp--get-language company-lsp-document-language (lsp-buffer-language)) (lsp-buffer-language)) detail)
+    (puthash "value" (gethash "detail" item) detail)
+    (setq contents (list detail documentation))
     (string-join
      (seq-map
       #'lsp--render-element
